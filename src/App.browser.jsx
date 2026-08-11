@@ -1,3 +1,4 @@
+import React from "react";
 const { useState, useEffect, useRef, createContext, useContext } = React;
 
 // ── Colors ────────────────────────────────────────────────
@@ -186,7 +187,7 @@ const syncVehicles=(disasters,cur)=>{
   const next={...cur};
   const active=new Set(),finished=new Set();
   disasters.forEach(d=>{
-    const vs=parseSelected(d.vehicles).filter(v=>ALL_VEHICLES.includes(v));
+    const vs=parseSelected(d.vehicles); // 車両名は動的リストで管理
     (d.status==="終了"||d.status==="未活動"?finished:active).forEach?.(()=>{});
     vs.forEach(v=>(d.status==="終了"||d.status==="未活動"?finished:active).add(v));
   });
@@ -383,7 +384,14 @@ function LoginScreen({onLogin}){
             )}
           </div>
         </div>
-        <div style={{textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:13,marginTop:16}}>© 南アルプス市消防本部</div>
+        <div style={{marginTop:16,display:"flex",flexWrap:"wrap",justifyContent:"center",gap:6}}>
+          {[["\uD83D\uDD04","\u66F4\u65B0\u30DC\u30BF\u30F3"],["\uD83D\uDDB8\uFE0F","\u5370\u5237\u6A5F\u80FD"],["\uD83D\uDCE5","\u5FA9\u5143\u6A5F\u80FD"],["\uD83C\uDF10","DB\u540C\u671F"],["\uD83D\uDC41","\u6A29\u9650\u7BA1\u7406"],["\uD83D\uDCF1","PWA\u5BFE\u5FDC"]].map(([ic,lb])=>(
+            <span key={lb} style={{background:"rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.75)",fontSize:12,padding:"3px 10px",borderRadius:20,display:"flex",alignItems:"center",gap:4}}>
+              <span>{ic}</span><span>{lb}</span><span style={{color:"#2ECC71",fontWeight:"bold"}}>✅</span>
+            </span>
+          ))}
+        </div>
+        <div style={{textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:13,marginTop:10}}>© 南アルプス市消防本部</div>
       </div>
     </div>
   );
@@ -545,7 +553,16 @@ function UnitVehiclePicker({value,onChange,vehicles}){
   const sel=parseSelected(value);
   const toggle=(item)=>{const n=sel.includes(item)?sel.filter(x=>x!==item):[...sel,item];onChange(n.join("、"));};
   const stC={"南ア消防署":RED,"甲西分遣所":ORANGE,"八田消防署":DBLUE,"消防本部":DGREEN};
-  const isD=(vn)=>{const key=Object.entries(STATIONS).find(([,a])=>a.includes(vn))?.[0];return key&&vehicles[`${key}::${vn}`]?.status==="出場中";};
+  // 現在のvehiclesオブジェクトから動的に所属・車両リストを生成
+  const dynStations={};
+  Object.keys(vehicles).filter(k=>!k.startsWith("__")).forEach(k=>{
+    const[stn,veh]=k.split("::");
+    if(stn&&veh){if(!dynStations[stn])dynStations[stn]=[];dynStations[stn].push(veh);}
+  });
+  const isD=(vn)=>{
+    const key=Object.keys(vehicles).find(k=>k.split("::")[1]===vn&&!k.startsWith("__"));
+    return key&&vehicles[key]?.status==="出場中";
+  };
   const Chip=({label,active,color,deployed,onPress})=>(
     <button type="button" onClick={onPress} style={{padding:"4px 10px",borderRadius:20,cursor:"pointer",border:`2px solid ${active?color:deployed?color+"66":"#ddd"}`,background:active?color:deployed?color+"15":"#fff",color:active?"#fff":deployed?color:"#555",fontSize:13,fontWeight:active?"bold":600,fontFamily:"inherit",whiteSpace:"nowrap"}}>
       {active?"✓ ":deployed?"🚒 ":""}{label}
@@ -554,7 +571,7 @@ function UnitVehiclePicker({value,onChange,vehicles}){
   return(
     <div>
       <div style={{marginBottom:8}}><div style={{fontSize:13,color:GRAY,fontWeight:"bold",marginBottom:5}}>── 隊 ──</div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{UNIT_GROUPS.map(o=><Chip key={o} label={o} active={sel.includes(o)} color={DGREEN} deployed={false} onPress={()=>toggle(o)}/>)}</div></div>
-      {Object.entries(STATIONS).map(([stn,vehs])=>(
+      {Object.entries(dynStations).map(([stn,vehs])=>(
         <div key={stn} style={{marginBottom:8}}><div style={{fontSize:13,color:stC[stn]||GRAY,fontWeight:"bold",marginBottom:5}}>── {stn} ──</div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{vehs.map(veh=><Chip key={veh} label={veh} active={sel.includes(veh)} color={stC[stn]||GRAY} deployed={isD(veh)} onPress={()=>toggle(veh)}/>)}</div></div>
       ))}
       {sel.length>0&&<div style={{marginTop:6,padding:"6px 10px",background:DGREEN+"15",border:`1px solid ${DGREEN}44`,borderRadius:7,fontSize:14}}><span style={{color:DGREEN,fontWeight:"bold"}}>選択中：</span>{sel.join("　")}<button type="button" onClick={()=>onChange("")} style={{marginLeft:8,fontSize:13,color:RED,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>クリア</button></div>}
@@ -975,15 +992,60 @@ function LinksScreen({onBack,role}){
 }
 
 // ── Settings ──────────────────────────────────────────────
-function SettingsScreen({config,onSaveConfig,onBack,showToast}){
+function SettingsScreen({config,onSaveConfig,onBack,showToast,vehicles,onSaveVehicles,disasters,onUpdateDisasters}){
   const[aPw,setAPw]=useState(config.adminPw),[iPw,setIPw]=useState(config.inputPw),[vPw,setVPw]=useState(config.viewerPw);
   const[vis,setVis]=useState({a:false,i:false,v:false}),[qrT,setQrT]=useState(null);
+  const[vehTab,setVehTab]=useState(Object.keys(STATIONS)[0]);
+  const[editVeh,setEditVeh]=useState(null);
+  const[newVehName,setNewVehName]=useState("");
   const savePws=()=>{if(!aPw||!iPw||!vPw){showToast("パスワードをすべて入力してください","error");return;}if(new Set([aPw,iPw,vPw]).size!==3){showToast("3つのパスワードはすべて異なる値にしてください","error");return;}onSaveConfig({adminPw:aPw,inputPw:iPw,viewerPw:vPw});};
   const roles=[{key:"admin",label:"🔑 管理者",token:mkToken("admin",config.adminPw),color:NAVY,bg:"#EBF0F5",desc:"全機能の編集・設定"},{key:"input",label:"✏️ 入力者",token:mkToken("input",config.inputPw),color:DGREEN,bg:"#E8F8F5",desc:"入力欄への記入のみ"},{key:"viewer",label:"👁 閲覧者",token:mkToken("viewer",config.viewerPw),color:GRAY,bg:"#F2F3F4",desc:"閲覧のみ"}];
+
+  // 車両名変更（災害記録の車両名も一括更新）
+  const renameVehicle=(stn,oldName,newName)=>{
+    if(!newName.trim()||oldName===newName.trim())return;
+    const oldKey=`${stn}::${oldName}`;
+    const newKey=`${stn}::${newName.trim()}`;
+    const next={...vehicles};
+    next[newKey]={...next[oldKey]};
+    delete next[oldKey];
+    onSaveVehicles(next);
+    // 災害記録内の車両名も一括置換
+    if(onUpdateDisasters){
+      const updated=disasters.map(d=>({
+        ...d,
+        vehicles:(d.vehicles||"").split(/[、,]/).map(v=>v.trim()===oldName?newName.trim():v.trim()).filter(Boolean).join("、")
+      }));
+      onUpdateDisasters(updated);
+    }
+    showToast(`「${oldName}」→「${newName.trim()}」に変更しました`);
+    setEditVeh(null);
+  };
+
+  // 車両追加
+  const addVehicle=(stn)=>{
+    if(!newVehName.trim()){showToast("車両名を入力してください","error");return;}
+    const key=`${stn}::${newVehName.trim()}`;
+    if(vehicles[key]){showToast("同じ名前の車両がすでに存在します","error");return;}
+    const next={...vehicles,[key]:{status:"待機",staff:["","","",""]}};
+    onSaveVehicles(next);
+    showToast(`「${newVehName.trim()}」を追加しました`);
+    setNewVehName("");
+  };
+
+  // 車両削除
+  const deleteVehicle=(stn,name)=>{
+    if(!confirm(`「${name}」を削除しますか？`))return;
+    const next={...vehicles};
+    delete next[`${stn}::${name}`];
+    onSaveVehicles(next);
+    showToast(`「${name}」を削除しました`);
+  };
+
   return(
     <div style={{minHeight:"100vh",background:"#F0F4F8",fontFamily:"'Noto Sans JP',sans-serif"}}>
       <AppBar title="⚙️ 管理設定" onBack={onBack} role="admin"/>
-      <div style={{padding:14,maxWidth:680,margin:"0 auto"}}>
+      <div style={{padding:14,maxWidth:760,margin:"0 auto"}}>
         <Card style={{marginBottom:14}}>
           <div style={{fontWeight:"bold",fontSize:15,color:NAVY,marginBottom:12}}>🔐 パスワード設定（3役割）</div>
           <PwField label="🔑 管理者パスワード" value={aPw} onChange={setAPw} show={vis.a} onToggle={()=>setVis({...vis,a:!vis.a})} hint="全機能の編集・設定が可能" color={NAVY}/>
@@ -991,6 +1053,76 @@ function SettingsScreen({config,onSaveConfig,onBack,showToast}){
           <PwField label="👁 閲覧者パスワード" value={vPw} onChange={setVPw} show={vis.v} onToggle={()=>setVis({...vis,v:!vis.v})} hint="閲覧のみ（編集不可）" color={GRAY}/>
           <Btn onClick={savePws} style={{width:"100%",padding:10}}>パスワードを更新する</Btn>
         </Card>
+
+        {/* 🚒 車両管理 */}
+        <Card style={{marginBottom:14}}>
+          <div style={{fontWeight:"bold",fontSize:15,color:NAVY,marginBottom:12}}>🚒 車両管理（追加・名称変更・削除）</div>
+          {/* 所属タブ */}
+          <div style={{display:"flex",gap:4,marginBottom:14,flexWrap:"wrap"}}>
+            {Object.keys(STATIONS).map(stn=>(
+              <button key={stn} onClick={()=>{setVehTab(stn);setEditVeh(null);setNewVehName("");}}
+                style={{padding:"6px 14px",borderRadius:20,border:`2px solid ${vehTab===stn?NAVY:"#ddd"}`,
+                  background:vehTab===stn?NAVY:"#fff",color:vehTab===stn?"#fff":"#555",
+                  fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                {stn}
+              </button>
+            ))}
+          </div>
+
+          {/* 車両一覧 */}
+          <div style={{marginBottom:12}}>
+            {Object.entries(vehicles)
+              .filter(([k])=>k.startsWith(vehTab+"::"))
+              .map(([k,v])=>{
+                const name=k.split("::")[1];
+                const cfg=SC[v.status]||SC["待機"];
+                return(
+                  <div key={k} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",
+                    background:"#FAFAFA",borderRadius:8,marginBottom:6,border:"1px solid #E8E8E8"}}>
+                    <span style={{width:8,height:8,borderRadius:"50%",background:cfg.dot,flexShrink:0}}/>
+                    {editVeh===k?(
+                      <>
+                        <input defaultValue={name} id={`veh-edit-${k}`} autoFocus
+                          style={{flex:1,border:`2px solid ${NAVY}`,borderRadius:6,padding:"4px 8px",
+                            fontSize:15,fontFamily:"inherit",background:"#EBF5FB"}}
+                          onKeyDown={e=>{
+                            if(e.key==="Enter")renameVehicle(vehTab,name,e.target.value);
+                            if(e.key==="Escape")setEditVeh(null);
+                          }}/>
+                        <Btn onClick={()=>{
+                          const el=document.getElementById(`veh-edit-${k}`);
+                          if(el)renameVehicle(vehTab,name,el.value);
+                        }} color={DGREEN} small>保存</Btn>
+                        <Btn onClick={()=>setEditVeh(null)} color={GRAY} outline small>戻る</Btn>
+                      </>
+                    ):(
+                      <>
+                        <span style={{flex:1,fontSize:15,fontWeight:"bold",color:NAVY}}>{name}</span>
+                        <span style={{fontSize:12,background:cfg.bg,color:cfg.fg,border:`1px solid ${cfg.bd}`,
+                          padding:"2px 8px",borderRadius:20}}>{v.status}</span>
+                        <Btn onClick={()=>setEditVeh(k)} color={BLUE} outline small>名称変更</Btn>
+                        <Btn onClick={()=>deleteVehicle(vehTab,name)} color={RED} outline small>削除</Btn>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+
+          {/* 車両追加 */}
+          <div style={{background:"#F0F9F4",border:`1.5px solid ${DGREEN}44`,borderRadius:10,padding:12}}>
+            <div style={{fontSize:13,fontWeight:"bold",color:DGREEN,marginBottom:8}}>➕ 新しい車両を追加（{vehTab}）</div>
+            <div style={{display:"flex",gap:8}}>
+              <input value={newVehName} onChange={e=>setNewVehName(e.target.value)}
+                placeholder="車両名を入力（例：救急６号車）"
+                onKeyDown={e=>e.key==="Enter"&&addVehicle(vehTab)}
+                style={{flex:1,border:`1.5px solid ${DGREEN}`,borderRadius:8,padding:"8px 12px",
+                  fontSize:15,fontFamily:"inherit",background:"#fff",outline:"none"}}/>
+              <Btn onClick={()=>addVehicle(vehTab)} color={DGREEN}>追加</Btn>
+            </div>
+          </div>
+        </Card>
+
         <Card>
           <div style={{fontWeight:"bold",fontSize:15,color:NAVY,marginBottom:12}}>📲 QRコード発行</div>
           <p style={{fontSize:14,color:"#666",marginBottom:14,lineHeight:1.7}}>QRコードをスキャンするとこのアプリに直接接続・自動ログインできます。</p>
@@ -1262,7 +1394,7 @@ function App(){
       {safePage==="vehicles"&&role!=="viewer"&&<VehicleScreen vehicles={vehicles} onSaveVehicles={saveVehicles} role={role} onBack={back} onForceRefresh={async(veh)=>{if(veh&&typeof veh==="object")setVehicles(veh);}}/>}
       {safePage==="archives"&&role!=="viewer"&&<ArchivesScreen archives={archives} onDelete={deleteArchive} onRestore={handleRestore} onBack={back} role={role}/>}
       {safePage==="links"&&role!=="viewer"&&<LinksScreen role={role} onBack={back}/>}
-      {safePage==="settings"&&role==="admin"&&<SettingsScreen config={config} onSaveConfig={saveConfig} onBack={back} showToast={showToast}/>}
+      {safePage==="settings"&&role==="admin"&&<SettingsScreen config={config} onSaveConfig={saveConfig} onBack={back} showToast={showToast} vehicles={vehicles} onSaveVehicles={saveVehicles} disasters={disasters} onUpdateDisasters={saveDisasters}/>}
       {sheet&&role!=="viewer"&&<SheetPage {...sheet} role={role} onBack={back}/>}
       {showModal&&<ArchiveModal disasters={disasters} onSave={handleArchiveSave} onClose={()=>setShowModal(false)}/>}
       {resetting&&<ResetProgress onDone={()=>setResetting(false)}/>}
@@ -1280,5 +1412,4 @@ function App(){
   return <div style={{paddingBottom:70}}>{content}<MobileNav role={role} page={safePage} onNav={setPage}/></div>;
 }
 
-
-
+export default App;
