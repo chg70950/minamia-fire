@@ -185,17 +185,27 @@ const getQRData=(token)=>{try{const u=new URL(window.location.href);u.searchPara
 // ── Vehicle sync ──────────────────────────────────────────
 const syncVehicles=(disasters,cur)=>{
   const next={...cur};
-  const active=new Set(),finished=new Set();
+  const activeV=new Set();   // 活動中案件の車両
+  const finishedV=new Set(); // 終了案件のみの車両
   disasters.forEach(d=>{
-    const vs=parseSelected(d.vehicles); // 車両名は動的リストで管理
-    (d.status==="終了"||d.status==="未活動"?finished:active).forEach?.(()=>{});
-    vs.forEach(v=>(d.status==="終了"||d.status==="未活動"?finished:active).add(v));
+    const vs=parseSelected(d.vehicles).filter(v=>ALL_VEHICLES.includes(v));
+    const done=d.status==="終了"||d.status==="未活動";
+    vs.forEach(v=>done?finishedV.add(v):activeV.add(v));
   });
   Object.keys(next).forEach(k=>{
     if(k.startsWith("__"))return;
-    const n=k.split("::")[1];
-    if(active.has(n)&&(next[k].status==="待機"||next[k].status==="出場中"))next[k]={...next[k],status:"出場中"};
-    else if(finished.has(n)&&!active.has(n)&&next[k].status==="出場中")next[k]={...next[k],status:"帰署中"};
+    const vn=k.split("::")[1];
+    const st=next[k].status;
+    if(activeV.has(vn)){
+      // ④ 活動中案件に紐づく車両は「出場中」に同期
+      if(st==="待機"||st==="帰署中")next[k]={...next[k],status:"出場中"};
+    } else if(finishedV.has(vn)&&!activeV.has(vn)){
+      // 終了案件のみ→「帰署中」
+      if(st==="出場中")next[k]={...next[k],status:"帰署中"};
+    } else if(!activeV.has(vn)&&!finishedV.has(vn)){
+      // どの案件にも未登録→「待機」に戻す
+      if(st==="出場中"||st==="帰署中")next[k]={...next[k],status:"待機"};
+    }
   });
   return next;
 };
@@ -323,75 +333,50 @@ function MobileNav({role,page,onNav}){
 
 // ── Login ─────────────────────────────────────────────────
 function LoginScreen({onLogin}){
-  // mode: "viewer"=閲覧者(デフォルト) / "staff"=管理者・入力者
-  const[mode,setMode]=useState("viewer");
-  const[pw,setPw]=useState(""),[err,setErr]=useState("");
+  const[pw,setPw]=useState(""),[err,setErr]=useState(""),[show,setShow]=useState(false);
   const try_=(v)=>{if(onLogin(v))return;setErr("パスワードが正しくありません");setPw("");};
-  const switchMode=(m)=>{setMode(m);setPw("");setErr("");};
-
   return(
     <div style={{minHeight:"100vh",background:`linear-gradient(160deg,${NAVY},#243B55)`,display:"flex",alignItems:"center",justifyContent:"center",padding:16,fontFamily:"'Noto Sans JP',sans-serif"}}>
       <div style={{width:"100%",maxWidth:400}}>
-        {/* ヘッダー */}
-        <div style={{textAlign:"center",marginBottom:24,color:"#fff"}}>
-          <div style={{fontSize:56,marginBottom:10}}>🚒</div>
-          <div style={{fontWeight:"bold",fontSize:22}}>南アルプス市消防本部</div>
-          <div style={{fontSize:15,opacity:0.7,marginTop:4}}>災害対策情報システム</div>
+        <div style={{textAlign:"center",marginBottom:28,color:"#fff"}}>
+          <div style={{fontSize:64,marginBottom:12}}>🚒</div>
+          <div style={{fontWeight:"bold",fontSize:22,letterSpacing:1}}>南アルプス市消防本部</div>
+          <div style={{fontSize:15,opacity:0.65,marginTop:6}}>災害対策情報システム</div>
         </div>
-
-        <div style={{background:"rgba(255,255,255,0.97)",borderRadius:16,overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.4)"}}>
-          {/* モード切替タブ */}
-          <div style={{display:"flex",background:"#F0F4F8",borderBottom:"2px solid #E0E0E0"}}>
-            <button onClick={()=>switchMode("viewer")} style={{flex:1,padding:"13px 8px",background:mode==="viewer"?NAVY:"transparent",color:mode==="viewer"?"#fff":"#888",border:"none",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"inherit",borderRadius:mode==="viewer"?"14px 0 0 0":0,transition:"background 0.2s"}}>
-              👁 閲覧者
-            </button>
-            <button onClick={()=>switchMode("staff")} style={{flex:1,padding:"13px 8px",background:mode==="staff"?NAVY:"transparent",color:mode==="staff"?"#fff":"#888",border:"none",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"inherit",borderRadius:mode==="staff"?"0 14px 0 0":0,transition:"background 0.2s"}}>
-              🔑 職員ログイン
-            </button>
+        <div style={{background:"rgba(255,255,255,0.97)",borderRadius:18,overflow:"hidden",boxShadow:"0 24px 64px rgba(0,0,0,0.45)"}}>
+          <div style={{background:`linear-gradient(135deg,${NAVY},${DBLUE})`,padding:"18px 22px"}}>
+            <div style={{color:"#fff",fontWeight:"bold",fontSize:17}}>🔐 ログイン</div>
+            <div style={{color:"rgba(255,255,255,0.65)",fontSize:13,marginTop:3}}>パスワードを入力してください</div>
           </div>
-
-          <div style={{padding:"24px 20px"}}>
-            {mode==="viewer"?(
-              <>
-                <div style={{background:"#EBF5FB",border:`1px solid ${BLUE}33`,borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:14,color:"#1A5276"}}>
-                  👁 閲覧者用パスワードを入力してください
+          <div style={{padding:"24px 22px"}}>
+            <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
+              {[["🔑","管理者",NAVY,"全機能"],["✏️","入力者",DGREEN,"入力のみ"],["👁","閲覧者",GRAY,"閲覧のみ"]].map(([ic,lb,c,desc])=>(
+                <div key={lb} style={{flex:1,minWidth:90,background:c+"12",border:`1.5px solid ${c}33`,borderRadius:10,padding:"8px 6px",textAlign:"center"}}>
+                  <div style={{fontSize:18,marginBottom:2}}>{ic}</div>
+                  <div style={{fontSize:13,fontWeight:"bold",color:c}}>{lb}</div>
+                  <div style={{fontSize:11,color:GRAY,marginTop:1}}>{desc}</div>
                 </div>
-                <label style={{fontSize:14,color:"#666",display:"block",marginBottom:6,fontWeight:"bold"}}>閲覧者パスワード</label>
-                <input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&try_(pw)} placeholder="閲覧者パスワードを入力" autoComplete="new-password"
-                  style={{width:"100%",border:`2px solid ${BLUE}`,borderRadius:8,padding:"12px 14px",fontSize:17,outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
-                {err&&<div style={{color:RED,fontSize:14,marginTop:6,fontWeight:"bold"}}>⚠ {err}</div>}
-                <Btn onClick={()=>try_(pw)} style={{width:"100%",padding:"12px",marginTop:14,fontSize:16}}>👁 閲覧者としてログイン</Btn>
-              </>
-            ):(
-              <>
-                <div style={{background:"#F9F0FF",border:`1px solid ${NAVY}33`,borderRadius:8,padding:"10px 14px",marginBottom:16,fontSize:14,color:NAVY}}>
-                  🔑 管理者・入力者のパスワードを入力してください
-                </div>
-                <label style={{fontSize:14,color:"#666",display:"block",marginBottom:6,fontWeight:"bold"}}>パスワード</label>
-                <input type="password" value={pw} onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&try_(pw)} placeholder="管理者 または 入力者のパスワード" autoComplete="new-password"
-                  style={{width:"100%",border:`2px solid ${NAVY}`,borderRadius:8,padding:"12px 14px",fontSize:17,outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}/>
-                {err&&<div style={{color:RED,fontSize:14,marginTop:6,fontWeight:"bold"}}>⚠ {err}</div>}
-                <Btn onClick={()=>try_(pw)} style={{width:"100%",padding:"12px",marginTop:14,fontSize:16,background:NAVY}}>🔑 ログイン</Btn>
-                <div style={{marginTop:12,padding:10,background:"#F8F9FA",borderRadius:8}}>
-                  {[["🔑 管理者",NAVY,"全機能"],["✏️ 入力者",DGREEN,"入力のみ"]].map(([l,c,d])=>(
-                    <div key={l} style={{display:"flex",gap:8,alignItems:"center",marginBottom:4}}>
-                      <span style={{fontSize:13,background:c,color:"#fff",padding:"2px 8px",borderRadius:20}}>{l}</span>
-                      <span style={{fontSize:13,color:"#888"}}>{d}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
+              ))}
+            </div>
+            <label style={{fontSize:14,color:"#555",display:"block",marginBottom:6,fontWeight:"bold"}}>パスワード</label>
+            <div style={{position:"relative",marginBottom:6}}>
+              <input
+                type={show?"text":"password"}
+                value={pw}
+                onChange={e=>{setPw(e.target.value);setErr("");}}
+                onKeyDown={e=>e.key==="Enter"&&try_(pw)}
+                placeholder="パスワードを入力してEnter"
+                autoComplete="new-password"
+                autoFocus
+                style={{width:"100%",border:`2px solid ${err?RED:NAVY}`,borderRadius:10,padding:"13px 44px 13px 14px",fontSize:17,outline:"none",boxSizing:"border-box",fontFamily:"inherit"}}
+              />
+              <button type="button" onClick={()=>setShow(s=>!s)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:20,color:"#aaa",padding:0}}>{show?"🙈":"👁"}</button>
+            </div>
+            {err&&<div style={{color:RED,fontSize:14,marginBottom:8,fontWeight:"bold"}}>⚠ {err}</div>}
+            <button onClick={()=>try_(pw)} style={{width:"100%",background:`linear-gradient(135deg,${NAVY},${DBLUE})`,color:"#fff",border:"none",borderRadius:10,padding:"13px",fontSize:17,fontWeight:"bold",cursor:"pointer",fontFamily:"inherit",marginTop:4,boxShadow:`0 4px 14px ${NAVY}44`}}>ログイン →</button>
           </div>
         </div>
-        <div style={{marginTop:16,display:"flex",flexWrap:"wrap",justifyContent:"center",gap:6}}>
-          {[["\uD83D\uDD04","\u66F4\u65B0\u30DC\u30BF\u30F3"],["\uD83D\uDDB8\uFE0F","\u5370\u5237\u6A5F\u80FD"],["\uD83D\uDCE5","\u5FA9\u5143\u6A5F\u80FD"],["\uD83C\uDF10","DB\u540C\u671F"],["\uD83D\uDC41","\u6A29\u9650\u7BA1\u7406"],["\uD83D\uDCF1","PWA\u5BFE\u5FDC"]].map(([ic,lb])=>(
-            <span key={lb} style={{background:"rgba(255,255,255,0.12)",color:"rgba(255,255,255,0.75)",fontSize:12,padding:"3px 10px",borderRadius:20,display:"flex",alignItems:"center",gap:4}}>
-              <span>{ic}</span><span>{lb}</span><span style={{color:"#2ECC71",fontWeight:"bold"}}>✅</span>
-            </span>
-          ))}
-        </div>
-        <div style={{textAlign:"center",color:"rgba(255,255,255,0.4)",fontSize:13,marginTop:10}}>© 南アルプス市消防本部</div>
+        <div style={{textAlign:"center",color:"rgba(255,255,255,0.35)",fontSize:13,marginTop:20}}>© 南アルプス市消防本部</div>
       </div>
     </div>
   );
@@ -503,19 +488,24 @@ function HomeScreen({disasters,vehicles,archives,role,onNav,onLogout,onArchive,d
             <span style={{fontWeight:"bold",fontSize:18,color:NAVY,flex:1}}>職員参集状況</span>
             <button onClick={()=>onNav("staff")} style={{fontSize:14,color:ORANGE,background:"none",border:`1.5px solid ${ORANGE}`,borderRadius:6,padding:"4px 12px",cursor:"pointer",fontFamily:"inherit",fontWeight:"bold"}}>参集報告へ →</button>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:8}}>
-            {[["対応職員",localDuty+sanshuSumi,RED,false],["勤務",localDuty,NAVY,true],["参集済",sanshuSumi,DGREEN,false],["未参集",miSanshu,ORANGE,false],["連絡中",renraku,BLUE,false],["不在",fuzai,GRAY,false]].map(([label,val,c,editable])=>(
-              <div key={label} style={{background:c+"12",border:`1.5px solid ${c}44`,borderRadius:10,padding:"10px 4px",textAlign:"center"}}>
-                <div style={{fontSize:13,color:c,fontWeight:"bold",marginBottom:4}}>{label}</div>
-                {editable&&canEdit?(
-                  <input type="number" min="0" value={localDuty||""} onChange={e=>handleDuty(Number(e.target.value)||0)}
-                    style={{width:"100%",border:`1.5px solid ${INPUT_BD}`,borderRadius:6,padding:"2px",fontSize:28,fontWeight:"bold",color:c,background:INPUT_BG,textAlign:"center",boxSizing:"border-box",fontFamily:"inherit"}}/>
-                ):(
-                  <div style={{fontSize:34,fontWeight:"bold",color:c,lineHeight:1}}>{val}</div>
-                )}
-                <div style={{fontSize:12,color:GRAY,marginTop:4}}>名</div>
-              </div>
-            ))}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6}}>
+            {[["対応職員",localDuty+sanshuSumi,RED,false],["勤務",localDuty,NAVY,true],["参集済",sanshuSumi,DGREEN,false],["未参集",miSanshu,ORANGE,false],["連絡中",renraku,BLUE,false],["不在",fuzai,GRAY,false]].map(([label,val,c,editable])=>{
+              // 数字の桁数に応じてフォントサイズを自動調整
+              const numStr=String(val||0);
+              const numSize=numStr.length>=3?20:numStr.length===2?26:32;
+              return(
+                <div key={label} style={{background:c+"12",border:`1.5px solid ${c}44`,borderRadius:10,padding:"8px 2px",textAlign:"center",minWidth:0,overflow:"hidden"}}>
+                  <div style={{fontSize:11,color:c,fontWeight:"bold",marginBottom:3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",padding:"0 2px"}}>{label}</div>
+                  {editable&&canEdit?(
+                    <input type="number" min="0" value={localDuty||""} onChange={e=>handleDuty(Number(e.target.value)||0)}
+                      style={{width:"100%",border:`1.5px solid ${INPUT_BD}`,borderRadius:6,padding:"2px 0",fontSize:numSize,fontWeight:"bold",color:c,background:INPUT_BG,textAlign:"center",boxSizing:"border-box",fontFamily:"inherit",minWidth:0}}/>
+                  ):(
+                    <div style={{fontSize:numSize,fontWeight:"bold",color:c,lineHeight:1.1,wordBreak:"break-all"}}>{val}</div>
+                  )}
+                  <div style={{fontSize:11,color:GRAY,marginTop:2}}>名</div>
+                </div>
+              );
+            })}
           </div>
         </Card>
 
@@ -549,37 +539,68 @@ function HomeScreen({disasters,vehicles,archives,role,onNav,onLogout,onArchive,d
 }
 
 // ── DisasterForm (module-level) ───────────────────────────
-function UnitVehiclePicker({value,onChange,vehicles}){
+function UnitVehiclePicker({value,onChange,vehicles,disasters=[]}){
   const sel=parseSelected(value);
-  const toggle=(item)=>{const n=sel.includes(item)?sel.filter(x=>x!==item):[...sel,item];onChange(n.join("、"));};
   const stC={"南ア消防署":RED,"甲西分遣所":ORANGE,"八田消防署":DBLUE,"消防本部":DGREEN};
-  // 現在のvehiclesオブジェクトから動的に所属・車両リストを生成
-  const dynStations={};
-  Object.keys(vehicles).filter(k=>!k.startsWith("__")).forEach(k=>{
-    const[stn,veh]=k.split("::");
-    if(stn&&veh){if(!dynStations[stn])dynStations[stn]=[];dynStations[stn].push(veh);}
-  });
-  const isD=(vn)=>{
-    const key=Object.keys(vehicles).find(k=>k.split("::")[1]===vn&&!k.startsWith("__"));
-    return key&&vehicles[key]?.status==="出場中";
-  };
-  const Chip=({label,active,color,deployed,onPress})=>(
-    <button type="button" onClick={onPress} style={{padding:"4px 10px",borderRadius:20,cursor:"pointer",border:`2px solid ${active?color:deployed?color+"66":"#ddd"}`,background:active?color:deployed?color+"15":"#fff",color:active?"#fff":deployed?color:"#555",fontSize:13,fontWeight:active?"bold":600,fontFamily:"inherit",whiteSpace:"nowrap"}}>
-      {active?"✓ ":deployed?"🚒 ":""}{label}
+  // 車両の現在の動態を取得
+  const getVSt=(vn)=>{const found=Object.keys(vehicles).find(vkey=>vkey.endsWith("::"+vn));return found?vehicles[found]?.status:"待機";};
+  // ロック判定：自分が選択中でなく、かつ動態がロック対象のとき
+  const isLocked=(vn)=>{if(sel.includes(vn))return false;return["出場中","活動中","調査中"].includes(getVSt(vn));};
+  const toggle=(vn)=>{if(isLocked(vn))return;onChange((sel.includes(vn)?sel.filter(x=>x!==vn):[...sel,vn]).join("、"));};
+  // 元のChip構造を維持したまま locked/deployed をサポート（=>()の暗黙returnを使用）
+  const Chip=({label,active,color,locked,deployed})=>(
+    <button
+      type="button"
+      onClick={()=>toggle(label)}
+      style={{
+        padding:"4px 10px",
+        borderRadius:20,
+        cursor:locked?"not-allowed":"pointer",
+        border:locked?"2px solid #ccc":active?`2px solid ${color}`:deployed?`2px dashed ${color}66`:"2px solid #ddd",
+        background:locked?"#f0f0f0":active?color:deployed?color+"15":"#fff",
+        color:locked?"#999":active?"#fff":deployed?color:"#555",
+        fontSize:13,fontWeight:active?"bold":600,
+        fontFamily:"inherit",whiteSpace:"nowrap",
+        opacity:locked?0.6:1,transition:"all 0.15s"
+      }}>
+      {locked?"🔒 ":active?"✓ ":deployed?"🚒 ":""}{label}
     </button>
   );
   return(
     <div>
-      <div style={{marginBottom:8}}><div style={{fontSize:13,color:GRAY,fontWeight:"bold",marginBottom:5}}>── 隊 ──</div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{UNIT_GROUPS.map(o=><Chip key={o} label={o} active={sel.includes(o)} color={DGREEN} deployed={false} onPress={()=>toggle(o)}/>)}</div></div>
-      {Object.entries(dynStations).map(([stn,vehs])=>(
-        <div key={stn} style={{marginBottom:8}}><div style={{fontSize:13,color:stC[stn]||GRAY,fontWeight:"bold",marginBottom:5}}>── {stn} ──</div><div style={{display:"flex",flexWrap:"wrap",gap:5}}>{vehs.map(veh=><Chip key={veh} label={veh} active={sel.includes(veh)} color={stC[stn]||GRAY} deployed={isD(veh)} onPress={()=>toggle(veh)}/>)}</div></div>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:8,fontSize:11}}>
+        <span style={{background:DGREEN,color:"#fff",padding:"1px 8px",borderRadius:20}}>✓ 選択中</span>
+        <span style={{background:"#fff",border:"2px solid #ddd",color:"#555",padding:"1px 8px",borderRadius:20}}>待機（選択可）</span>
+        <span style={{background:"#fff",border:"2px dashed #aaa",color:"#777",padding:"1px 8px",borderRadius:20}}>🚒 出場中</span>
+        <span style={{background:"#f0f0f0",border:"2px solid #ccc",color:"#999",padding:"1px 8px",borderRadius:20,opacity:0.7}}>🔒 使用中（選択不可）</span>
+      </div>
+      <div style={{marginBottom:8}}>
+        <div style={{fontSize:13,color:GRAY,fontWeight:"bold",marginBottom:5}}>── 隊 ──</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+          {UNIT_GROUPS.map(o=><Chip key={o} label={o} active={sel.includes(o)} color={DGREEN} locked={false} deployed={false}/>)}
+        </div>
+      </div>
+      {Object.entries(STATIONS).map(([stn,vehs])=>(
+        <div key={stn} style={{marginBottom:8}}>
+          <div style={{fontSize:13,color:stC[stn]||GRAY,fontWeight:"bold",marginBottom:5}}>── {stn} ──</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {vehs.map(veh=>(
+              <Chip key={veh} label={veh} active={sel.includes(veh)} color={stC[stn]||GRAY} locked={isLocked(veh)} deployed={!isLocked(veh)&&getVSt(veh)!=="待機"&&getVSt(veh)!=="帰署中"}/>
+            ))}
+          </div>
+        </div>
       ))}
-      {sel.length>0&&<div style={{marginTop:6,padding:"6px 10px",background:DGREEN+"15",border:`1px solid ${DGREEN}44`,borderRadius:7,fontSize:14}}><span style={{color:DGREEN,fontWeight:"bold"}}>選択中：</span>{sel.join("　")}<button type="button" onClick={()=>onChange("")} style={{marginLeft:8,fontSize:13,color:RED,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>クリア</button></div>}
+      {sel.length>0&&(
+        <div style={{marginTop:6,padding:"6px 10px",background:DGREEN+"15",border:`1px solid ${DGREEN}44`,borderRadius:7,fontSize:14}}>
+          <span style={{color:DGREEN,fontWeight:"bold"}}>選択中：</span>{sel.join("　")}
+          <button type="button" onClick={()=>onChange("")} style={{marginLeft:8,fontSize:13,color:RED,background:"none",border:"none",cursor:"pointer",textDecoration:"underline"}}>クリア</button>
+        </div>
+      )}
     </div>
   );
 }
 
-function DisasterForm({form,setForm,editing,onSave,onCancel,vehicles,color,title}){
+function DisasterForm({form,setForm,editing,onSave,onCancel,vehicles,color,title,disasters=[]}){
   const upd=(key)=>(e)=>setForm(prev=>({...prev,[key]:e.target.value}));
   return(
     <Card style={{marginBottom:12,border:`2px solid ${color}`}}>
@@ -599,7 +620,7 @@ function DisasterForm({form,setForm,editing,onSave,onCancel,vehicles,color,title
           <FRow label="優先順位"><select value={form.priority} onChange={upd("priority")} style={sSt}>{PRIO.map(o=><option key={o}>{o}</option>)}</select></FRow>
           <FRow label="活動状況"><select value={form.status} onChange={upd("status")} style={sSt}>{ACT_ST.map(o=><option key={o}>{o}</option>)}</select></FRow>
         </div>
-        <FRow label="出動隊・車両"><UnitVehiclePicker value={form.vehicles} onChange={v=>setForm(p=>({...p,vehicles:v}))} vehicles={vehicles}/></FRow>
+        <FRow label="出動隊・車両"><UnitVehiclePicker value={form.vehicles} onChange={v=>setForm(p=>({...p,vehicles:v}))} vehicles={vehicles} disasters={disasters}/></FRow>
         <FRow label="備考"><input value={form.note} onChange={upd("note")} style={iSt}/></FRow>
       </div>
       <div style={{display:"flex",gap:8}}>
@@ -618,7 +639,14 @@ function DisasterScreen({disasters,vehicles,onSave,role,onBack,onForceRefresh}){
   const[syncing,setSyncing]=useState(false),[syncMsg,setSyncMsg]=useState(null);
   const openNew=()=>{setForm(blank);setEditing(-1);setShowForm(true);};
   const openEdit=(d,i)=>{setForm({...blank,...d});setEditing(i);setShowForm(true);};
-  const save=()=>{const n=[...disasters];if(editing!==-1&&editing!==null)n[editing]=form;else n.push({...form,id:Date.now()});onSave(n);setShowForm(false);};
+  const save=()=>{
+    const n=[...disasters];
+    if(editing!==-1&&editing!==null)n[editing]=form;
+    else n.push({...form,id:Date.now()});
+    onSave(n);          // saveDisasters内でsyncVehiclesも実行される
+    setShowForm(false);
+    setEditing(null);
+  };
   const remove=(i)=>{if(!confirm("削除しますか？"))return;const n=[...disasters];n.splice(i,1);onSave(n);};
   const sorted=[...disasters].sort((a,b)=>(`${a.date||"9999"}${a.time||"9999"}`).localeCompare(`${b.date||"9999"}${b.time||"9999"}`));
   const handleRefresh=async()=>{
@@ -636,7 +664,13 @@ function DisasterScreen({disasters,vehicles,onSave,role,onBack,onForceRefresh}){
       <div style={{padding:14,maxWidth:1100,margin:"0 auto"}}>
         {/* 更新ボタン */}
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-          <button onClick={handleRefresh} disabled={syncing} style={{display:"flex",alignItems:"center",gap:8,background:syncing?"#ccc":DBLUE,color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontSize:16,fontWeight:"bold",cursor:syncing?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}>
+          <button onClick={()=>{
+              if(editing!==null){
+                if(!window.confirm("編集中のデータが失われます。更新しますか？"))return;
+                setEditing(null);
+              }
+              handleRefresh();
+            }} disabled={syncing} style={{display:"flex",alignItems:"center",gap:8,background:syncing?"#ccc":DBLUE,color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontSize:16,fontWeight:"bold",cursor:syncing?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}>
             <span style={{display:"inline-block",animation:syncing?"spin 1s linear infinite":"none",fontSize:18}}>🔄</span>
             {syncing?"更新中..":"最新データに更新"}
           </button>
@@ -658,7 +692,15 @@ function DisasterScreen({disasters,vehicles,onSave,role,onBack,onForceRefresh}){
             th{background:#1A3A5C;color:#fff;padding:8px 10px;text-align:left;font-size:13px;border:1px solid #ccc;}
             td{padding:7px 10px;border:1px solid #ddd;font-size:13px;vertical-align:top;}
             tr:nth-child(even) td{background:#F5F8FA;}
-            @media print{body{margin:8px;}}</style></head><body>
+            .btn-bar{display:flex;gap:10px;margin-bottom:16px;}
+            .btn{padding:9px 22px;border:none;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;}
+            .btn-print{background:#1A3A5C;color:#fff;}
+            .btn-back{background:#fff;color:#1A3A5C;border:2px solid #1A3A5C;}
+            @media print{body{margin:8px;}.btn-bar{display:none!important;}}</style></head><body>
+            <div class="btn-bar">
+              <button class="btn btn-back" onclick="window.close()">← 戻る</button>
+              <button class="btn btn-print" onclick="window.print()">🖨️ 印刷する</button>
+            </div>
             <h1>📋 災害一覧</h1>
             <div class="meta">印刷日時：${now}　／　件数：${disasters.length}件</div>
             <table><thead><tr>
@@ -666,14 +708,18 @@ function DisasterScreen({disasters,vehicles,onSave,role,onBack,onForceRefresh}){
               <th>状況</th><th>優先度</th><th>車両</th><th>備考</th>
             </tr></thead><tbody>${rows||"<tr><td colspan='8' style='text-align:center;color:#aaa;padding:20px'>データがありません</td></tr>"}</tbody></table>
             </body></html>`);
-            win.document.close();win.focus();setTimeout(()=>win.print(),400);
+            win.document.close();win.focus();
           }} style={{display:"flex",alignItems:"center",gap:8,background:"#fff",color:NAVY,border:`2px solid ${NAVY}`,borderRadius:10,padding:"10px 20px",fontSize:16,fontWeight:"bold",cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 6px rgba(0,0,0,0.08)"}}>
             <span style={{fontSize:18}}>🖨️</span>印刷
           </button>
           {syncMsg&&<span style={{fontSize:15,fontWeight:"bold",color:syncMsg.type==="ok"?DGREEN:RED,padding:"8px 14px",background:syncMsg.type==="ok"?"#E8F8F5":"#FDEDEC",borderRadius:8,border:`1px solid ${syncMsg.type==="ok"?DGREEN:RED}44`}}>{syncMsg.text}</span>}
         </div>
-        {showForm&&canEdit&&editing!==-1&&editing!==null&&<DisasterForm form={form} setForm={setForm} editing={editing} onSave={save} onCancel={()=>setShowForm(false)} vehicles={vehicles} color={BLUE} title="案件を編集"/>}
-        {disasters.length===0&&!(showForm&&(editing===-1||editing===null))?(
+        {/* 編集フォーム（一覧の上） */}
+        {showForm&&canEdit&&editing!==-1&&editing!==null&&(
+          <DisasterForm form={form} setForm={setForm} editing={editing} onSave={save} onCancel={()=>{setShowForm(false);setEditing(null);}} vehicles={vehicles} color={BLUE} title="案件を編集" disasters={disasters}/>
+        )}
+        {/* 案件一覧：常に表示（0件なら「なし」メッセージ） */}
+        {disasters.length===0?(
           <Card style={{textAlign:"center",padding:32,color:"#bbb"}}><div style={{fontSize:38,marginBottom:8}}>📋</div>案件が登録されていません</Card>
         ):(
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(380px,1fr))",gap:10}}>
@@ -707,8 +753,18 @@ function DisasterScreen({disasters,vehicles,onSave,role,onBack,onForceRefresh}){
             })}
           </div>
         )}
-        {showForm&&canEdit&&(editing===-1||editing===null)&&<div style={{marginTop:8}}><DisasterForm form={form} setForm={setForm} editing={-1} onSave={save} onCancel={()=>setShowForm(false)} vehicles={vehicles} color={RED} title="新規案件を登録"/></div>}
-        {canEdit&&!showForm&&<Btn onClick={openNew} color={RED} style={{width:"100%",marginTop:8,padding:10}}>＋ 新規案件を追加</Btn>}
+        {/* 新規案件フォーム（一覧の下） */}
+        {showForm&&canEdit&&(editing===-1||editing===null)&&(
+          <div style={{marginTop:8}}>
+            <DisasterForm form={form} setForm={setForm} editing={-1} onSave={save} onCancel={()=>{setShowForm(false);setEditing(null);}} vehicles={vehicles} color={RED} title="新規案件を登録" disasters={disasters}/>
+          </div>
+        )}
+        {/* 新規追加ボタン（フォーム表示中は非表示） */}
+        {canEdit&&!showForm&&(
+          <Btn onClick={openNew} color={RED} style={{width:"100%",marginTop:8,padding:10}}>
+            ＋ 新規案件を追加
+          </Btn>
+        )}
       </div>
     </div>
   );
@@ -771,7 +827,7 @@ function VehicleList({vehicles,canEdit,onUpdate,onUpdateStaff,onAddReq,onUpdateR
 
 // ── Vehicle Screen ────────────────────────────────────────
 function VehicleScreen({vehicles,onSaveVehicles,role,onBack,onForceRefresh}){
-  const canEdit=role==="admin"||role==="input";
+  const canEdit=role==="admin"; // ① 管理者のみ車両変更可能
   const[showFull,setShowFull]=useState(false);
   const[syncing,setSyncing]=useState(false);
   const[syncMsg,setSyncMsg]=useState(null);
@@ -798,19 +854,29 @@ function VehicleScreen({vehicles,onSaveVehicles,role,onBack,onForceRefresh}){
     }).join("");
     win.document.write(`<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"/>
     <title>🚒 指揮動態管理 印刷</title>
-    <style>body{font-family:'Meiryo',sans-serif;margin:20px;font-size:13px;}
-    h1{font-size:18px;color:#1A3A5C;margin-bottom:4px;}
-    .meta{font-size:12px;color:#666;margin-bottom:12px;}
-    table{width:100%;border-collapse:collapse;}
-    th{background:#1A3A5C;color:#fff;padding:8px 10px;text-align:left;border:1px solid #ccc;}
-    td{padding:7px 10px;border:1px solid #ddd;vertical-align:top;}
-    tr:nth-child(even) td{background:#F5F8FA;}
-    @media print{body{margin:8px;}}</style></head><body>
+    <style>
+      body{font-family:'Meiryo',sans-serif;margin:20px;font-size:13px;}
+      h1{font-size:18px;color:#1A3A5C;margin-bottom:4px;}
+      .meta{font-size:12px;color:#666;margin-bottom:12px;}
+      table{width:100%;border-collapse:collapse;}
+      th{background:#1A3A5C;color:#fff;padding:8px 10px;text-align:left;border:1px solid #ccc;}
+      td{padding:7px 10px;border:1px solid #ddd;vertical-align:top;}
+      tr:nth-child(even) td{background:#F5F8FA;}
+      .btn-bar{display:flex;gap:10px;margin-bottom:16px;}
+      .btn{padding:9px 22px;border:none;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;}
+      .btn-print{background:#1A3A5C;color:#fff;}
+      .btn-back{background:#fff;color:#1A3A5C;border:2px solid #1A3A5C;}
+      @media print{body{margin:8px;}.btn-bar{display:none!important;}}
+    </style></head><body>
+    <div class="btn-bar no-print">
+      <button class="btn btn-back" onclick="window.close()">← 戻る</button>
+      <button class="btn btn-print" onclick="window.print()">🖨️ 印刷する</button>
+    </div>
     <h1>🚒 指揮動態管理</h1>
     <div class="meta">印刷日時：${now}</div>
     <table><thead><tr><th>車両名</th><th>状況</th><th>乗務員</th><th>備考</th></tr></thead>
     <tbody>${rows}</tbody></table></body></html>`);
-    win.document.close();win.focus();setTimeout(()=>win.print(),400);
+    win.document.close();win.focus();
   };
   const RefreshBar=()=>(
     <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
@@ -859,9 +925,27 @@ function SheetPage({title,icon,color,cols,storageKey,role,onBack}){
   const[syncMsg,setSyncMsg]=useState(null);
   const canEdit=role==="admin"||role==="input",isAdmin=role==="admin";
 
-  // 初回 + リアルタイム同期
+  // ── 編集中フラグ（Refで常に最新値を参照）──────────────────
+  const editingRef=useRef(null);
+  useEffect(()=>{editingRef.current=editing;},[editing]);
+
+  // ── リアルタイム同期 ────────────────────────────────────────
+  // ① 初回マウント時にDBからロード
+  // ② subscribeStorageの内部初回ロードはスキップ（二重ロード防止）
+  // ③ 以降の更新通知は「編集中でなければ」自動反映
   useEffect(()=>{
-    return subscribeStorage([storageKey],(_,r)=>setRows(Array.isArray(r)?r:[]));
+    let skipFirst=true; // subscribeStorage内部の初回ロードをスキップ
+    // 初回ロード（自前で実行）
+    (async()=>{
+      const d=await sg(storageKey);
+      setRows(Array.isArray(d)?d:[]);
+    })();
+    // リアルタイム購読
+    return subscribeStorage([storageKey],(_,r)=>{
+      if(skipFirst){skipFirst=false;return;} // 内部初回ロードをスキップ
+      if(editingRef.current!==null)return;   // 編集中は上書きしない
+      setRows(Array.isArray(r)?r:[]);        // 他端末の変更を反映
+    });
   },[storageKey]);
 
   // 手動更新（DBから強制再取得）
@@ -894,15 +978,22 @@ function SheetPage({title,icon,color,cols,storageKey,role,onBack}){
         .meta{font-size:13px;color:#666;margin-bottom:16px;}
         table{width:100%;border-collapse:collapse;margin-top:8px;}
         tr:nth-child(even) td{background:#F5F8FA;}
-        @media print{body{margin:10px;}h1{font-size:18px;}}
+        .btn-bar{display:flex;gap:10px;margin-bottom:16px;}
+        .btn{padding:9px 22px;border:none;border-radius:8px;font-size:14px;font-weight:bold;cursor:pointer;}
+        .btn-print{background:#1A3A5C;color:#fff;}
+        .btn-back{background:#fff;color:#1A3A5C;border:2px solid #1A3A5C;}
+        @media print{body{margin:10px;}h1{font-size:18px;}.btn-bar{display:none!important;}}
       </style></head><body>
+      <div class="btn-bar">
+        <button class="btn btn-back" onclick="window.close()">← 戻る</button>
+        <button class="btn btn-print" onclick="window.print()">🖨️ 印刷する</button>
+      </div>
       <h1>${icon} ${title}</h1>
       <div class="meta">印刷日時：${now}　／　件数：${rows.length}件</div>
       <table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml||"<tr><td colspan='${cols.length}' style='padding:20px;text-align:center;color:#aaa'>データがありません</td></tr>"}</tbody></table>
       </body></html>`);
     printWin.document.close();
     printWin.focus();
-    setTimeout(()=>{printWin.print();},400);
   };
 
   const openNew=()=>{setForm(Object.fromEntries(cols.map(c=>[c.key,c.default||""])));setEditing(-1);};
@@ -913,6 +1004,7 @@ function SheetPage({title,icon,color,cols,storageKey,role,onBack}){
     else n[editing]={...n[editing],...form};
     setRows(n);
     await ss(storageKey,n);
+    editingRef.current=null; // 保存完了→リアルタイム同期再開
     setEditing(null);
     setSaved(true);
     setTimeout(()=>setSaved(false),2000);
@@ -922,14 +1014,100 @@ function SheetPage({title,icon,color,cols,storageKey,role,onBack}){
     const n=rows.filter((_,i)=>i!==ri);
     setRows(n);
     await ss(storageKey,n);
+    editingRef.current=null; // 削除完了→リアルタイム同期再開
     if(editing===ri)setEditing(null);
   };
   const updForm=(key,val)=>setForm(prev=>({...prev,[key]:val}));
+
+  // ── 参集集計（staff専用）
+  const isStaff=storageKey==="nf-staff";
+  const sanshu   =isStaff?rows.filter(r=>r.status==="参集済"):[];
+  const renraku  =isStaff?rows.filter(r=>r.status==="連絡中"):[];
+  const fuzai    =isStaff?rows.filter(r=>r.status==="不在"):[];
+  const miSanshu =isStaff?rows.filter(r=>r.status==="未参集"):[];
+  const sanshuTotal=sanshu.length;
+  const otherTotal =renraku.length+fuzai.length+miSanshu.length;
 
   return(
     <div style={{minHeight:"100vh",background:"#F0F4F8",fontFamily:"'Noto Sans JP',sans-serif"}}>
       <AppBar title={`${icon} ${title}`} onBack={onBack} role={role}/>
       <div style={{padding:14,maxWidth:900,margin:"0 auto"}}>
+        {/* 参集集計サマリー（参集報告のみ表示） */}
+        {isStaff&&(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            {/* 左：参集者 */}
+            <div style={{background:`linear-gradient(135deg,${DGREEN}22,${DGREEN}08)`,border:`2px solid ${DGREEN}`,borderRadius:14,overflow:"hidden"}}>
+              <div style={{background:DGREEN,padding:"10px 14px",display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:20}}>✅</span>
+                <span style={{color:"#fff",fontWeight:"bold",fontSize:16}}>参集者</span>
+                <span style={{marginLeft:"auto",background:"rgba(255,255,255,0.3)",color:"#fff",fontSize:22,fontWeight:"bold",padding:"2px 14px",borderRadius:20}}>{sanshuTotal}名</span>
+              </div>
+              <div style={{padding:"10px 14px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${DGREEN}22`}}>
+                  <span style={{fontSize:14,color:"#555"}}>✅ 参集済</span>
+                  <span style={{fontSize:20,fontWeight:"bold",color:DGREEN}}>{sanshu.length}名</span>
+                </div>
+                {sanshu.length>0&&(
+                  <div style={{marginTop:8}}>
+                    {sanshu.map((r,i)=>(
+                      <div key={i} style={{fontSize:13,color:"#444",padding:"3px 0",display:"flex",gap:6}}>
+                        <span style={{color:DGREEN}}>●</span>
+                        <span style={{fontWeight:"bold"}}>{r.name||"―"}</span>
+                        <span style={{color:GRAY}}>{r.station||""}</span>
+                        {r.time&&<span style={{color:GRAY,marginLeft:"auto"}}>{r.time}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* 右：参集者以外 */}
+            <div style={{background:`linear-gradient(135deg,${ORANGE}22,${ORANGE}08)`,border:`2px solid ${ORANGE}`,borderRadius:14,overflow:"hidden"}}>
+              <div style={{background:ORANGE,padding:"10px 14px",display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:20}}>⏳</span>
+                <span style={{color:"#fff",fontWeight:"bold",fontSize:16}}>参集者以外</span>
+                <span style={{marginLeft:"auto",background:"rgba(255,255,255,0.3)",color:"#fff",fontSize:22,fontWeight:"bold",padding:"2px 14px",borderRadius:20}}>{otherTotal}名</span>
+              </div>
+              <div style={{padding:"10px 14px"}}>
+                {[["📞 連絡中",renraku,BLUE],["❌ 未参集",miSanshu,RED],["🚫 不在",fuzai,GRAY]].map(([label,list,c])=>(
+                  list.length>0&&(
+                    <div key={label} style={{marginBottom:6}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:`1px solid ${ORANGE}22`}}>
+                        <span style={{fontSize:13,color:"#555"}}>{label}</span>
+                        <span style={{fontSize:17,fontWeight:"bold",color:c}}>{list.length}名</span>
+                      </div>
+                      {list.map((r,i)=>(
+                        <div key={i} style={{fontSize:13,color:"#444",padding:"3px 0",display:"flex",gap:6}}>
+                          <span style={{color:c}}>●</span>
+                          <span style={{fontWeight:"bold"}}>{r.name||"―"}</span>
+                          <span style={{color:GRAY}}>{r.station||""}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                ))}
+                {otherTotal===0&&<div style={{color:GRAY,fontSize:14,textAlign:"center",padding:"12px 0"}}>全員参集済です ✅</div>}
+              </div>
+            </div>
+          </div>
+        )}
+        {/* 合算バー */}
+        {isStaff&&rows.length>0&&(
+          <div style={{background:"#fff",borderRadius:10,padding:"10px 16px",marginBottom:12,display:"flex",alignItems:"center",gap:12,boxShadow:"0 1px 4px rgba(0,0,0,0.07)"}}>
+            <span style={{fontSize:14,color:GRAY,fontWeight:"bold"}}>合計 {rows.length}名</span>
+            <div style={{flex:1,background:"#F0F0F0",borderRadius:20,height:14,overflow:"hidden",display:"flex"}}>
+              {sanshuTotal>0&&<div style={{width:`${(sanshuTotal/rows.length)*100}%`,background:DGREEN,transition:"width 0.4s"}}/>}
+              {renraku.length>0&&<div style={{width:`${(renraku.length/rows.length)*100}%`,background:BLUE,transition:"width 0.4s"}}/>}
+              {miSanshu.length>0&&<div style={{width:`${(miSanshu.length/rows.length)*100}%`,background:RED,transition:"width 0.4s"}}/>}
+              {fuzai.length>0&&<div style={{width:`${(fuzai.length/rows.length)*100}%`,background:GRAY,transition:"width 0.4s"}}/>}
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {[[DGREEN,"参集済",sanshuTotal],[BLUE,"連絡中",renraku.length],[RED,"未参集",miSanshu.length],[GRAY,"不在",fuzai.length]].filter(([,, n])=>n>0).map(([c,l,n])=>(
+                <span key={l} style={{fontSize:12,color:c,fontWeight:"bold"}}><span style={{display:"inline-block",width:8,height:8,borderRadius:"50%",background:c,marginRight:3}}></span>{l} {n}</span>
+              ))}
+            </div>
+          </div>
+        )}
         {/* 更新ボタン */}
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
           <button onClick={handleRefresh} disabled={syncing} style={{display:"flex",alignItems:"center",gap:8,background:syncing?"#ccc":DBLUE,color:"#fff",border:"none",borderRadius:10,padding:"10px 20px",fontSize:16,fontWeight:"bold",cursor:syncing?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 2px 6px rgba(0,0,0,0.15)",transition:"opacity 0.2s"}}>
@@ -992,60 +1170,70 @@ function LinksScreen({onBack,role}){
 }
 
 // ── Settings ──────────────────────────────────────────────
-function SettingsScreen({config,onSaveConfig,onBack,showToast,vehicles,onSaveVehicles,disasters,onUpdateDisasters}){
+// ── 車両名変更エディタ（管理者のみ）──────────────────────────
+function VehicleLabelEditor({vehicleLabels={},onSave}){
+  const[labels,setLabels]=useState(()=>{
+    const init={};
+    Object.entries(STATIONS).forEach(([stn,vehs])=>{
+      vehs.forEach(veh=>{const k=`${stn}::${veh}`;init[k]=vehicleLabels[k]||"";});
+    });
+    return init;
+  });
+  const[saved,setSaved]=useState(false);
+  const upd=(k,v)=>setLabels(prev=>({...prev,[k]:v}));
+  const handleSave=async()=>{
+    const out={};
+    Object.entries(labels).forEach(([k,v])=>{if(v.trim())out[k]=v.trim();});
+    await onSave(out);
+    setSaved(true);setTimeout(()=>setSaved(false),2000);
+  };
+  const stC={"南ア消防署":RED,"甲西分遣所":ORANGE,"八田消防署":DBLUE,"消防本部":DGREEN};
+  return(
+    <Card style={{marginTop:14}}>
+      <div style={{fontWeight:"bold",fontSize:15,color:NAVY,marginBottom:4}}>🚒 車両名変更（管理者のみ）</div>
+      <div style={{fontSize:13,color:GRAY,marginBottom:12}}>空欄の場合はデフォルト名が使用されます</div>
+      {Object.entries(STATIONS).map(([stn,vehs])=>(
+        <div key={stn} style={{marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:"bold",color:stC[stn]||GRAY,marginBottom:6,paddingBottom:4,borderBottom:`2px solid ${stC[stn]||GRAY}33`}}>▶ {stn}</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:8}}>
+            {vehs.map(veh=>{
+              const k=`${stn}::${veh}`;
+              return(
+                <div key={k} style={{display:"flex",alignItems:"center",gap:8,background:"#F8F9FA",borderRadius:8,padding:"6px 10px"}}>
+                  <span style={{fontSize:13,color:NAVY,fontWeight:"bold",minWidth:90,flexShrink:0}}>{veh}</span>
+                  <span style={{fontSize:13,color:GRAY}}>→</span>
+                  <input
+                    value={labels[k]||""}
+                    onChange={e=>upd(k,e.target.value)}
+                    placeholder={veh}
+                    style={{flex:1,border:`1px solid ${labels[k]?stC[stn]||NAVY:"#ddd"}`,borderRadius:6,padding:"4px 8px",fontSize:13,fontFamily:"inherit",background:labels[k]?"#fff":"#F8F9FA",outline:"none"}}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      {saved&&<div style={{background:DGREEN,color:"#fff",borderRadius:8,padding:"8px 14px",marginBottom:10,fontWeight:"bold",fontSize:14,textAlign:"center"}}>✅ 車両名を保存しました</div>}
+      <Btn onClick={handleSave} style={{width:"100%",padding:10}}>🚒 車両名を保存する</Btn>
+      <Btn onClick={()=>{
+        if(!window.confirm("全ての車両名をデフォルトに戻しますか？"))return;
+        const reset={};Object.entries(STATIONS).forEach(([stn,vehs])=>{vehs.forEach(veh=>{reset[`${stn}::${veh}`]="";});});
+        setLabels(reset);onSave({});
+      }} color={GRAY} outline style={{width:"100%",marginTop:8,padding:8}}>デフォルト名に戻す</Btn>
+    </Card>
+  );
+}
+
+function SettingsScreen({config,onSaveConfig,onBack,showToast,vehicleLabels={},onSaveLabels}){
   const[aPw,setAPw]=useState(config.adminPw),[iPw,setIPw]=useState(config.inputPw),[vPw,setVPw]=useState(config.viewerPw);
   const[vis,setVis]=useState({a:false,i:false,v:false}),[qrT,setQrT]=useState(null);
-  const[vehTab,setVehTab]=useState(Object.keys(STATIONS)[0]);
-  const[editVeh,setEditVeh]=useState(null);
-  const[newVehName,setNewVehName]=useState("");
   const savePws=()=>{if(!aPw||!iPw||!vPw){showToast("パスワードをすべて入力してください","error");return;}if(new Set([aPw,iPw,vPw]).size!==3){showToast("3つのパスワードはすべて異なる値にしてください","error");return;}onSaveConfig({adminPw:aPw,inputPw:iPw,viewerPw:vPw});};
   const roles=[{key:"admin",label:"🔑 管理者",token:mkToken("admin",config.adminPw),color:NAVY,bg:"#EBF0F5",desc:"全機能の編集・設定"},{key:"input",label:"✏️ 入力者",token:mkToken("input",config.inputPw),color:DGREEN,bg:"#E8F8F5",desc:"入力欄への記入のみ"},{key:"viewer",label:"👁 閲覧者",token:mkToken("viewer",config.viewerPw),color:GRAY,bg:"#F2F3F4",desc:"閲覧のみ"}];
-
-  // 車両名変更（災害記録の車両名も一括更新）
-  const renameVehicle=(stn,oldName,newName)=>{
-    if(!newName.trim()||oldName===newName.trim())return;
-    const oldKey=`${stn}::${oldName}`;
-    const newKey=`${stn}::${newName.trim()}`;
-    const next={...vehicles};
-    next[newKey]={...next[oldKey]};
-    delete next[oldKey];
-    onSaveVehicles(next);
-    // 災害記録内の車両名も一括置換
-    if(onUpdateDisasters){
-      const updated=disasters.map(d=>({
-        ...d,
-        vehicles:(d.vehicles||"").split(/[、,]/).map(v=>v.trim()===oldName?newName.trim():v.trim()).filter(Boolean).join("、")
-      }));
-      onUpdateDisasters(updated);
-    }
-    showToast(`「${oldName}」→「${newName.trim()}」に変更しました`);
-    setEditVeh(null);
-  };
-
-  // 車両追加
-  const addVehicle=(stn)=>{
-    if(!newVehName.trim()){showToast("車両名を入力してください","error");return;}
-    const key=`${stn}::${newVehName.trim()}`;
-    if(vehicles[key]){showToast("同じ名前の車両がすでに存在します","error");return;}
-    const next={...vehicles,[key]:{status:"待機",staff:["","","",""]}};
-    onSaveVehicles(next);
-    showToast(`「${newVehName.trim()}」を追加しました`);
-    setNewVehName("");
-  };
-
-  // 車両削除
-  const deleteVehicle=(stn,name)=>{
-    if(!confirm(`「${name}」を削除しますか？`))return;
-    const next={...vehicles};
-    delete next[`${stn}::${name}`];
-    onSaveVehicles(next);
-    showToast(`「${name}」を削除しました`);
-  };
-
   return(
     <div style={{minHeight:"100vh",background:"#F0F4F8",fontFamily:"'Noto Sans JP',sans-serif"}}>
       <AppBar title="⚙️ 管理設定" onBack={onBack} role="admin"/>
-      <div style={{padding:14,maxWidth:760,margin:"0 auto"}}>
+      <div style={{padding:14,maxWidth:680,margin:"0 auto"}}>
         <Card style={{marginBottom:14}}>
           <div style={{fontWeight:"bold",fontSize:15,color:NAVY,marginBottom:12}}>🔐 パスワード設定（3役割）</div>
           <PwField label="🔑 管理者パスワード" value={aPw} onChange={setAPw} show={vis.a} onToggle={()=>setVis({...vis,a:!vis.a})} hint="全機能の編集・設定が可能" color={NAVY}/>
@@ -1053,91 +1241,28 @@ function SettingsScreen({config,onSaveConfig,onBack,showToast,vehicles,onSaveVeh
           <PwField label="👁 閲覧者パスワード" value={vPw} onChange={setVPw} show={vis.v} onToggle={()=>setVis({...vis,v:!vis.v})} hint="閲覧のみ（編集不可）" color={GRAY}/>
           <Btn onClick={savePws} style={{width:"100%",padding:10}}>パスワードを更新する</Btn>
         </Card>
-
-        {/* 🚒 車両管理 */}
-        <Card style={{marginBottom:14}}>
-          <div style={{fontWeight:"bold",fontSize:15,color:NAVY,marginBottom:12}}>🚒 車両管理（追加・名称変更・削除）</div>
-          {/* 所属タブ */}
-          <div style={{display:"flex",gap:4,marginBottom:14,flexWrap:"wrap"}}>
-            {Object.keys(STATIONS).map(stn=>(
-              <button key={stn} onClick={()=>{setVehTab(stn);setEditVeh(null);setNewVehName("");}}
-                style={{padding:"6px 14px",borderRadius:20,border:`2px solid ${vehTab===stn?NAVY:"#ddd"}`,
-                  background:vehTab===stn?NAVY:"#fff",color:vehTab===stn?"#fff":"#555",
-                  fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-                {stn}
-              </button>
+        <Card>
+          <div style={{fontWeight:"bold",fontSize:15,color:NAVY,marginBottom:6}}>📲 QRコード発行</div>
+          <p style={{fontSize:13,color:"#666",marginBottom:14,lineHeight:1.7}}>QRコードをスキャンするとこのアプリに直接接続・自動ログインできます。</p>
+          {/* 3つのQRコードを一括表示 */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:12}}>
+            {roles.map(r=>(
+              <div key={r.key} style={{background:r.bg,border:`2px solid ${r.color}55`,borderRadius:14,padding:"14px 10px",textAlign:"center"}}>
+                <div style={{fontWeight:"bold",fontSize:15,color:r.color,marginBottom:10}}>{r.label}</div>
+                <div style={{background:"#fff",borderRadius:10,display:"inline-block",padding:6,boxShadow:"0 2px 8px rgba(0,0,0,0.10)",marginBottom:8}}>
+                  <QRCanvas data={getQRData(r.token)} size={160}/>
+                </div>
+                <div style={{fontSize:12,color:"#888",lineHeight:1.6}}>{r.desc}</div>
+                <div style={{fontSize:11,color:r.color,marginTop:6,fontWeight:"bold"}}>📱 スキャンでログイン</div>
+              </div>
             ))}
           </div>
-
-          {/* 車両一覧 */}
-          <div style={{marginBottom:12}}>
-            {Object.entries(vehicles)
-              .filter(([k])=>k.startsWith(vehTab+"::"))
-              .map(([k,v])=>{
-                const name=k.split("::")[1];
-                const cfg=SC[v.status]||SC["待機"];
-                return(
-                  <div key={k} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",
-                    background:"#FAFAFA",borderRadius:8,marginBottom:6,border:"1px solid #E8E8E8"}}>
-                    <span style={{width:8,height:8,borderRadius:"50%",background:cfg.dot,flexShrink:0}}/>
-                    {editVeh===k?(
-                      <>
-                        <input defaultValue={name} id={`veh-edit-${k}`} autoFocus
-                          style={{flex:1,border:`2px solid ${NAVY}`,borderRadius:6,padding:"4px 8px",
-                            fontSize:15,fontFamily:"inherit",background:"#EBF5FB"}}
-                          onKeyDown={e=>{
-                            if(e.key==="Enter")renameVehicle(vehTab,name,e.target.value);
-                            if(e.key==="Escape")setEditVeh(null);
-                          }}/>
-                        <Btn onClick={()=>{
-                          const el=document.getElementById(`veh-edit-${k}`);
-                          if(el)renameVehicle(vehTab,name,el.value);
-                        }} color={DGREEN} small>保存</Btn>
-                        <Btn onClick={()=>setEditVeh(null)} color={GRAY} outline small>戻る</Btn>
-                      </>
-                    ):(
-                      <>
-                        <span style={{flex:1,fontSize:15,fontWeight:"bold",color:NAVY}}>{name}</span>
-                        <span style={{fontSize:12,background:cfg.bg,color:cfg.fg,border:`1px solid ${cfg.bd}`,
-                          padding:"2px 8px",borderRadius:20}}>{v.status}</span>
-                        <Btn onClick={()=>setEditVeh(k)} color={BLUE} outline small>名称変更</Btn>
-                        <Btn onClick={()=>deleteVehicle(vehTab,name)} color={RED} outline small>削除</Btn>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-          </div>
-
-          {/* 車両追加 */}
-          <div style={{background:"#F0F9F4",border:`1.5px solid ${DGREEN}44`,borderRadius:10,padding:12}}>
-            <div style={{fontSize:13,fontWeight:"bold",color:DGREEN,marginBottom:8}}>➕ 新しい車両を追加（{vehTab}）</div>
-            <div style={{display:"flex",gap:8}}>
-              <input value={newVehName} onChange={e=>setNewVehName(e.target.value)}
-                placeholder="車両名を入力（例：救急６号車）"
-                onKeyDown={e=>e.key==="Enter"&&addVehicle(vehTab)}
-                style={{flex:1,border:`1.5px solid ${DGREEN}`,borderRadius:8,padding:"8px 12px",
-                  fontSize:15,fontFamily:"inherit",background:"#fff",outline:"none"}}/>
-              <Btn onClick={()=>addVehicle(vehTab)} color={DGREEN}>追加</Btn>
-            </div>
+          <div style={{marginTop:12,background:"#F8F9FA",borderRadius:8,padding:"10px 14px",fontSize:13,color:GRAY}}>
+            ⚠️ QRコードは役割ごとに異なります。印刷して各担当者に配布してください。
           </div>
         </Card>
-
-        <Card>
-          <div style={{fontWeight:"bold",fontSize:15,color:NAVY,marginBottom:12}}>📲 QRコード発行</div>
-          <p style={{fontSize:14,color:"#666",marginBottom:14,lineHeight:1.7}}>QRコードをスキャンするとこのアプリに直接接続・自動ログインできます。</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
-            {roles.map(r=>(<button key={r.key} onClick={()=>setQrT(qrT===r.key?null:r.key)} style={{background:qrT===r.key?r.bg:"#FAFAFA",border:`2px solid ${qrT===r.key?r.color:"#ddd"}`,borderRadius:10,padding:12,cursor:"pointer",textAlign:"center",fontFamily:"inherit"}}><div style={{fontSize:22,marginBottom:4}}>{r.label.split(" ")[0]}</div><div style={{fontWeight:"bold",color:r.color,fontSize:14}}>{r.label.split(" ").slice(1).join(" ")}</div><div style={{fontSize:12,color:"#888",marginTop:2}}>{r.desc}</div></button>))}
-          </div>
-          {qrT&&(()=>{const r=roles.find(x=>x.key===qrT);if(!r)return null;return(
-            <div style={{background:r.bg,border:`1.5px solid ${r.color}44`,borderRadius:12,padding:16,textAlign:"center"}}>
-              <div style={{fontWeight:"bold",fontSize:15,color:r.color,marginBottom:12}}>{r.label} 用QRコード</div>
-              <div style={{background:"#fff",borderRadius:10,display:"inline-block",padding:8,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}><QRCanvas data={getQRData(r.token)} size={220}/></div>
-              <div style={{fontSize:13,color:"#888",marginTop:12,lineHeight:1.7}}>📱 スキャンするとログイン画面に直接接続します</div>
-              <Btn onClick={()=>setQrT(null)} color={GRAY} outline small style={{marginTop:12}}>閉じる</Btn>
-            </div>
-          );})()} 
-        </Card>
+        {/* 車両名変更カード */}
+        <VehicleLabelEditor vehicleLabels={vehicleLabels} onSave={onSaveLabels}/>
       </div>
     </div>
   );
@@ -1178,36 +1303,229 @@ function ResetProgress({onDone}){
 }
 
 // ── Archives ──────────────────────────────────────────────
+// ── シートデータ表示コンポーネント ──────────────────────────
+const SHEET_DEFS=[
+  {key:"nf-road",icon:"🛣️",title:"道路被害状況",color:YELLOW,cols:[{k:"name",l:"路線名"},{k:"status",l:"通行状況"},{k:"detail",l:"被害詳細"},{k:"note",l:"備考"}]},
+  {key:"nf-comm",icon:"📡",title:"通信状況",color:ORANGE,cols:[{k:"type",l:"手段"},{k:"location",l:"場所"},{k:"status",l:"不通状況"},{k:"note",l:"備考"}]},
+  {key:"nf-water",icon:"💧",title:"水利状況",color:DBLUE,cols:[{k:"type",l:"種別"},{k:"location",l:"場所"},{k:"detail",l:"状況"},{k:"note",l:"備考"}]},
+  {key:"nf-tochuu",icon:"🚶",title:"参集途上被害",color:ORANGE,cols:[{k:"location",l:"場所"},{k:"damage",l:"被害状況"},{k:"casualties",l:"傷病者"},{k:"request",l:"消防要請"},{k:"reporter",l:"報告者"}]},
+  {key:"nf-staff",icon:"👥",title:"参集報告",color:ORANGE,cols:[{k:"name",l:"氏名"},{k:"station",l:"所属"},{k:"time",l:"参集時刻"},{k:"status",l:"状況"},{k:"note",l:"備考"}]},
+  {key:"nf-support",icon:"🤝",title:"応援状況",color:DGREEN,cols:[{k:"org",l:"消防本部名"},{k:"arrived",l:"到着時刻"},{k:"leader",l:"部隊長"},{k:"num",l:"人員"},{k:"location",l:"活動場所"},{k:"status",l:"活動状況"}]},
+  {key:"nf-kinkyuu",icon:"🆘",title:"緊急援助隊",color:RED,cols:[{k:"org",l:"消防本部名"},{k:"arrived",l:"到着時刻"},{k:"leader",l:"部隊長"},{k:"num",l:"人員"},{k:"location",l:"活動場所"},{k:"status",l:"活動状況"}]},
+];
+
+function SheetDataView({tableData}){
+  const[openKey,setOpenKey]=useState(null);
+  if(!tableData)return null;
+  const hasAny=SHEET_DEFS.some(s=>Array.isArray(tableData[s.key])&&tableData[s.key].length>0);
+  if(!hasAny)return(
+    <Card style={{marginBottom:12,border:`1px solid #E0E0E0`}}>
+      <div style={{fontSize:14,color:GRAY,textAlign:"center",padding:"12px 0"}}>シートデータなし</div>
+    </Card>
+  );
+  return(
+    <div style={{marginBottom:12}}>
+      <div style={{fontWeight:"bold",fontSize:15,color:NAVY,marginBottom:8}}>📊 シートデータ一覧</div>
+      {SHEET_DEFS.map(s=>{
+        const rows=Array.isArray(tableData[s.key])?tableData[s.key]:[];
+        if(rows.length===0)return null;
+        const isOpen=openKey===s.key;
+        return(
+          <Card key={s.key} style={{marginBottom:8,border:`1.5px solid ${s.color}44`}}>
+            <div
+              onClick={()=>setOpenKey(isOpen?null:s.key)}
+              style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",userSelect:"none"}}
+            >
+              <span style={{fontSize:20}}>{s.icon}</span>
+              <span style={{fontWeight:"bold",fontSize:15,color:s.color,flex:1}}>{s.title}</span>
+              <span style={{background:s.color+"22",color:s.color,fontSize:13,padding:"2px 10px",borderRadius:20,fontWeight:"bold"}}>{rows.length}件</span>
+              <span style={{fontSize:18,color:"#aaa",transition:"transform 0.2s",transform:isOpen?"rotate(90deg)":"none"}}>›</span>
+            </div>
+            {isOpen&&(
+              <div style={{marginTop:10,borderTop:`1px solid ${s.color}22`,paddingTop:10,overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr>{s.cols.map(c=>(<th key={c.k} style={{background:s.color,color:"#fff",padding:"6px 10px",textAlign:"left",whiteSpace:"nowrap",borderRight:"1px solid rgba(255,255,255,0.3)"}}>{c.l}</th>))}</tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row,ri)=>(
+                      <tr key={ri} style={{background:ri%2===0?"#fff":s.color+"08"}}>
+                        {s.cols.map(c=>(<td key={c.k} style={{padding:"6px 10px",border:`1px solid ${s.color}22`,color:row[c.k]?"#333":"#ccc",verticalAlign:"top"}}>{row[c.k]||"―"}</td>))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 function ArchivesScreen({archives,onDelete,onRestore,onBack,role}){
   const[sel,setSel]=useState(null),[conf,setConf]=useState(null),[restConf,setRestConf]=useState(false);
-  const arc=sel?archives.find(a=>a.id===sel):null;
+  const arc=sel?archives.find(a=>String(a.id)===String(sel)):null;
+
+  // ── 一括印刷 ──────────────────────────────────────────────
+  const handlePrintAll=(arc)=>{
+    const disasters=Array.isArray(arc.disasters)?arc.disasters:[];
+    const sorted=[...disasters].sort((a,b)=>(`${a.date||"9999"}${a.time||"9999"}`).localeCompare(`${b.date||"9999"}${b.time||"9999"}`));
+    const now=new Date().toLocaleString("ja-JP");
+    const td=arc.tableData||{};
+
+    // 災害案件テーブルHTML
+    const disasterRows=sorted.map(d=>`
+      <tr>
+        <td>${d.date||"―"}</td>
+        <td>${d.time||"―"}</td>
+        <td><span style="background:${d.type==="火災"?"#C0392B":d.type==="救助"?"#E67E22":d.type==="救急"?"#2980B9":"#7F8C8D"};color:#fff;padding:2px 8px;border-radius:10px;font-size:12px">${d.type||"―"}</span></td>
+        <td style="font-weight:bold">${d.address||"―"} ${d.landmark||""}</td>
+        <td>${d.status||"―"}</td>
+        <td><span style="background:${d.priority==="高"?"#C0392B":d.priority==="中"?"#F39C12":"#27AE60"};color:#fff;padding:2px 8px;border-radius:10px;font-size:12px">${d.priority||"―"}</span></td>
+        <td>${d.vehicles||"―"}</td>
+        <td>${d.note||"―"}</td>
+      </tr>`).join("");
+
+    // 各シートのHTML
+    const sheetHtmlList=SHEET_DEFS.map(s=>{
+      const rows=Array.isArray(td[s.key])?td[s.key]:[];
+      if(rows.length===0)return"";
+      const headerCols=s.cols.map(c=>`<th>${c.l}</th>`).join("");
+      const dataRows=rows.map((row,ri)=>`<tr class="${ri%2===0?"even":"odd"}">${s.cols.map(c=>`<td>${row[c.k]||"―"}</td>`).join("")}</tr>`).join("");
+      return`
+        <div class="section">
+          <h2>${s.icon} ${s.title}（${rows.length}件）</h2>
+          <table><thead><tr>${headerCols}</tr></thead><tbody>${dataRows}</tbody></table>
+        </div>`;
+    }).join("");
+
+    const win=window.open("","_blank","width=1100,height=800");
+    win.document.write(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<title>${arc.name} 印刷</title>
+<style>
+  body{font-family:"Meiryo","Noto Sans JP",sans-serif;margin:20px;color:#222;font-size:13px;}
+  h1{font-size:20px;color:#1A3A5C;border-bottom:3px solid #1A3A5C;padding-bottom:8px;margin-bottom:4px;}
+  h2{font-size:15px;color:#1A3A5C;border-left:4px solid #1A3A5C;padding-left:10px;margin:20px 0 8px;}
+  .meta{font-size:12px;color:#666;margin-bottom:16px;}
+  .summary{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;}
+  .summary-item{background:#F0F4F8;border:1px solid #ddd;border-radius:8px;padding:8px 16px;text-align:center;}
+  .summary-item .label{font-size:11px;color:#888;}
+  .summary-item .value{font-size:22px;font-weight:bold;color:#1A3A5C;}
+  .section{margin-bottom:24px;page-break-inside:avoid;}
+  table{width:100%;border-collapse:collapse;margin-top:4px;}
+  th{background:#1A3A5C;color:#fff;padding:7px 10px;text-align:left;font-size:12px;border:1px solid #ccc;white-space:nowrap;}
+  td{padding:6px 10px;border:1px solid #ddd;font-size:12px;vertical-align:top;}
+  tr.even td{background:#F5F8FA;}
+  tr.odd td{background:#fff;}
+      .btn{padding:10px 24px;border-radius:8px;font-size:15px;font-weight:bold;cursor:pointer;}
+      .btn-print{background:#1A3A5C;color:#fff;border:none;}
+      .btn-back{background:#fff;color:#1A3A5C;border:2px solid #1A3A5C;}
+  @media print{
+    body{margin:8px;}
+    h2{page-break-before:auto;}
+    .section{page-break-inside:avoid;}
+    .no-print{display:none!important;}
+  }
+</style>
+</head>
+<body>
+<h1>📁 ${arc.name}</h1>
+<div class="meta">印刷日時：${now}　／　保存日時：${new Date(arc.savedAt).toLocaleString("ja-JP")}</div>
+
+<div class="summary">
+  <div class="summary-item"><div class="label">📋 総案件数</div><div class="value">${disasters.length}</div></div>
+  ${["火災","救助","救急","その他"].map(t=>`<div class="summary-item"><div class="label">${t}</div><div class="value">${disasters.filter(d=>d.type===t).length}</div></div>`).join("")}
+</div>
+
+<div class="section">
+  <h2>📋 災害案件一覧（${disasters.length}件）</h2>
+  ${disasters.length===0?`<p style="color:#aaa;text-align:center;padding:16px">案件データがありません</p>`:`
+  <table>
+    <thead><tr><th>日付</th><th>時刻</th><th>種別</th><th>場所</th><th>状況</th><th>優先</th><th>車両</th><th>備考</th></tr></thead>
+    <tbody>${disasterRows}</tbody>
+  </table>`}
+</div>
+
+${sheetHtmlList}
+
+<div class="no-print" style="margin-top:20px;display:flex;gap:10px;justify-content:center">
+  <button class="btn btn-back" onclick="window.close()">← 戻る</button>
+  <button class="btn btn-print" onclick="window.print()">🖨️ 印刷する</button>
+</div>
+</body>
+</html>`);
+    win.document.close();
+    win.focus();
+  };
+
   if(arc){
-    const sorted=[...(arc.disasters||[])].sort((a,b)=>(`${a.date||"9999"}${a.time||"9999"}`).localeCompare(`${b.date||"9999"}${b.time||"9999"}`));
+    const disasters=Array.isArray(arc.disasters)?arc.disasters:[];
+    const sorted=[...disasters].sort((a,b)=>(`${a.date||"9999"}${a.time||"9999"}`).localeCompare(`${b.date||"9999"}${b.time||"9999"}`));
     return(
       <div style={{minHeight:"100vh",background:"#F0F4F8",fontFamily:"'Noto Sans JP',sans-serif"}}>
         <AppBar title="📁 保存記録の詳細" onBack={()=>setSel(null)} role={role}/>
         <div style={{padding:14,maxWidth:1100,margin:"0 auto"}}>
+          {/* ヘッダーカード */}
           <Card style={{marginBottom:12,border:`2px solid ${DGREEN}44`}}>
             <div style={{fontWeight:"bold",fontSize:18,color:NAVY,marginBottom:4}}>{arc.name}</div>
-            <div style={{fontSize:14,color:GRAY,marginBottom:12}}>📅 保存日時：{fmtDT(arc.savedAt)}　📋 案件数：{arc.disasters.length}件</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>{DTYPES.map(t=>(<div key={t} style={{background:TC[t]+"15",border:`1px solid ${TC[t]}33`,borderRadius:8,padding:"8px 4px",textAlign:"center"}}><div style={{fontSize:12,color:GRAY}}>{t}</div><div style={{fontSize:22,fontWeight:"bold",color:TC[t]}}>{arc.disasters.filter(d=>d.type===t).length}</div></div>))}</div>
+            <div style={{fontSize:14,color:GRAY,marginBottom:12}}>📅 保存日時：{fmtDT(arc.savedAt)}　📋 案件数：{disasters.length}件</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
+              {DTYPES.map(t=>(<div key={t} style={{background:TC[t]+"15",border:`1px solid ${TC[t]}33`,borderRadius:8,padding:"8px 4px",textAlign:"center"}}><div style={{fontSize:12,color:GRAY}}>{t}</div><div style={{fontSize:22,fontWeight:"bold",color:TC[t]}}>{disasters.filter(d=>d.type===t).length}</div></div>))}
+            </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {/* 一括印刷ボタン */}
+              <button onClick={()=>handlePrintAll(arc)} style={{display:"flex",alignItems:"center",gap:8,background:"#fff",color:NAVY,border:`2px solid ${NAVY}`,borderRadius:10,padding:"9px 18px",fontSize:15,fontWeight:"bold",cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 6px rgba(0,0,0,0.08)"}}>
+                <span style={{fontSize:18}}>🖨️</span>全データを一括印刷
+              </button>
               {role==="admin"&&<><Btn onClick={()=>setRestConf(true)} color={DGREEN} small>📥 この記録を復元</Btn><Btn onClick={()=>setConf(arc.id)} color={RED} outline small>🗑 この記録を削除</Btn></>}
             </div>
           </Card>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(380px,1fr))",gap:10}}>
-            {sorted.map((d,i)=>{const tc=TC[d.type]||GRAY,pc=PC[d.priority]||GRAY,pbg=PBG[d.priority]||"#F8F9FA",vehs=parseSelected(d.vehicles),mq=encodeURIComponent(`${d.address||""}${d.landmark?" "+d.landmark:""}`);;return(
-              <div key={i} style={{borderRadius:12,background:pbg,border:`2px solid ${pc}`,overflow:"hidden"}}>
-                <div style={{background:pc,padding:"4px 12px",display:"flex",alignItems:"center",gap:8}}><span style={{color:"#fff",fontSize:14,fontWeight:"bold"}}>優先度：{d.priority||"―"}</span><span style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>{d.date} {d.time}</span><span style={{marginLeft:"auto",background:"rgba(255,255,255,0.25)",color:"#fff",fontSize:13,padding:"1px 8px",borderRadius:20,fontWeight:"bold"}}>{d.status}</span></div>
-                <div style={{padding:"10px 12px"}}>
-                  <div style={{display:"flex",gap:6,marginBottom:6}}><span style={{background:tc,color:"#fff",fontSize:13,padding:"2px 8px",borderRadius:20,fontWeight:"bold"}}>{d.type}</span></div>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}><div style={{fontWeight:"bold",fontSize:16,color:NAVY,flex:1}}>{d.address} {d.landmark}</div>{(d.address||d.landmark)&&<a href={`https://www.google.com/maps/search/?api=1&query=${mq}`} target="_blank" rel="noopener noreferrer" style={{background:"#fff",border:`1.5px solid ${BLUE}`,color:BLUE,borderRadius:6,padding:"3px 8px",fontSize:13,fontWeight:"bold",textDecoration:"none",flexShrink:0}}>🗺️</a>}</div>
-                  {d.note&&<div style={{fontSize:14,color:"#666",marginBottom:4}}>{d.note}</div>}
-                  {vehs.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4}}>{vehs.map(v=><span key={v} style={{fontSize:13,background:"rgba(31,97,141,0.12)",color:DBLUE,padding:"1px 7px",borderRadius:20,border:`1px solid ${DBLUE}33`}}>🚒 {v}</span>)}</div>}
-                </div>
-              </div>
-            );})}
-          </div>
+
+          {/* 災害案件一覧 */}
+          <div style={{fontWeight:"bold",fontSize:15,color:NAVY,marginBottom:8}}>📋 災害案件一覧</div>
+          {disasters.length===0?(
+            <Card style={{textAlign:"center",padding:30,color:"#bbb",marginBottom:12}}>
+              <div style={{fontSize:32,marginBottom:8}}>📋</div>
+              <div>この記録に案件データがありません</div>
+            </Card>
+          ):(
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(380px,1fr))",gap:10,marginBottom:16}}>
+              {sorted.map((d,i)=>{
+                const tc=TC[d.type]||GRAY,pc=PC[d.priority]||GRAY,pbg=PBG[d.priority]||"#F8F9FA";
+                const vehs=parseSelected(d.vehicles);
+                const mq=encodeURIComponent(`${d.address||""}${d.landmark?" "+d.landmark:""}`);
+                return(
+                  <div key={i} style={{borderRadius:12,background:pbg,border:`2px solid ${pc}`,overflow:"hidden"}}>
+                    <div style={{background:pc,padding:"4px 12px",display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{color:"#fff",fontSize:14,fontWeight:"bold"}}>優先度：{d.priority||"―"}</span>
+                      <span style={{color:"rgba(255,255,255,0.85)",fontSize:13}}>{d.date} {d.time}</span>
+                      <span style={{marginLeft:"auto",background:"rgba(255,255,255,0.25)",color:"#fff",fontSize:13,padding:"1px 8px",borderRadius:20,fontWeight:"bold"}}>{d.status}</span>
+                    </div>
+                    <div style={{padding:"10px 12px"}}>
+                      <div style={{display:"flex",gap:6,marginBottom:6}}>
+                        <span style={{background:tc,color:"#fff",fontSize:13,padding:"2px 8px",borderRadius:20,fontWeight:"bold"}}>{d.type}</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
+                        <div style={{fontWeight:"bold",fontSize:16,color:NAVY,flex:1}}>{d.address} {d.landmark}</div>
+                        {(d.address||d.landmark)&&<a href={`https://www.google.com/maps/search/?api=1&query=${mq}`} target="_blank" rel="noopener noreferrer" style={{background:"#fff",border:`1.5px solid ${BLUE}`,color:BLUE,borderRadius:6,padding:"3px 8px",fontSize:13,fontWeight:"bold",textDecoration:"none",flexShrink:0}}>🗺️</a>}
+                      </div>
+                      {d.note&&<div style={{fontSize:14,color:"#666",marginBottom:4}}>{d.note}</div>}
+                      {vehs.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4}}>{vehs.map(v=><span key={v} style={{fontSize:13,background:"rgba(31,97,141,0.12)",color:DBLUE,padding:"1px 7px",borderRadius:20,border:`1px solid ${DBLUE}33`}}>🚒 {v}</span>)}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* シートデータ一覧（全シート） */}
+          <SheetDataView tableData={arc.tableData}/>
+
         </div>
         {restConf&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}><div style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:400,overflow:"hidden"}}><div style={{background:`linear-gradient(135deg,${DGREEN},${GREEN})`,padding:"16px 20px"}}><div style={{color:"#fff",fontWeight:"bold",fontSize:18}}>📥 記録を復元しますか？</div></div><div style={{padding:20}}><div style={{background:"#FEF5E7",border:`1px solid ${ORANGE}44`,borderRadius:8,padding:12,marginBottom:16,fontSize:14,color:"#784212"}}>⚠️ 現在のデータが上書きされます。<br/>復元前に現在のデータを保存しておくことをお勧めします。</div><div style={{display:"flex",gap:10}}><Btn onClick={()=>{onRestore(arc);setRestConf(false);setSel(null);}} color={DGREEN} style={{flex:1,padding:10}}>📥 復元する</Btn><Btn onClick={()=>setRestConf(false)} color={GRAY} outline style={{flex:1,padding:10}}>キャンセル</Btn></div></div></div></div>)}
         {conf&&(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}><div style={{background:"#fff",borderRadius:14,padding:24,width:"100%",maxWidth:380}}><div style={{fontWeight:"bold",fontSize:18,color:NAVY,marginBottom:8}}>記録を削除しますか？</div><div style={{fontSize:15,color:"#555",marginBottom:16}}>「{arc.name}」を完全に削除します。</div><div style={{display:"flex",gap:10}}><Btn onClick={()=>{onDelete(conf);setConf(null);setSel(null);}} color={RED} style={{flex:1,padding:10}}>削除する</Btn><Btn onClick={()=>setConf(null)} color={GRAY} outline style={{flex:1,padding:10}}>キャンセル</Btn></div></div></div>)}
@@ -1221,11 +1539,40 @@ function ArchivesScreen({archives,onDelete,onRestore,onBack,role}){
         <div style={{fontSize:14,color:GRAY,marginBottom:12}}>保存済み記録 {archives.length} 件（新しい順）</div>
         {archives.length===0?(<Card style={{textAlign:"center",padding:40,color:"#bbb"}}><div style={{fontSize:42,marginBottom:12}}>📁</div><div>保存された記録はありません</div></Card>):(
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:10}}>
-            {[...archives].reverse().map(a=>{const cnts=DTYPES.reduce((acc,t)=>({...acc,[t]:a.disasters.filter(d=>d.type===t).length}),{});return(
-              <Card key={a.id} style={{cursor:"pointer"}} onClick={()=>setSel(a.id)} onMouseOver={e=>(e.currentTarget.style.transform="translateY(-1px)")} onMouseOut={e=>(e.currentTarget.style.transform="none")}>
-                <div style={{display:"flex",alignItems:"flex-start",gap:12}}><div style={{fontSize:30,flexShrink:0}}>📁</div><div style={{flex:1}}><div style={{fontWeight:"bold",fontSize:16,color:NAVY,marginBottom:4}}>{a.name}</div><div style={{fontSize:13,color:GRAY,marginBottom:8}}>📅 {fmtDT(a.savedAt)}</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{DTYPES.filter(t=>cnts[t]>0).map(t=>(<span key={t} style={{background:TC[t]+"20",color:TC[t],fontSize:13,padding:"2px 8px",borderRadius:20,fontWeight:"bold",border:`1px solid ${TC[t]}33`}}>{t} {cnts[t]}件</span>))}</div></div><div style={{color:"#ccc",fontSize:22}}>›</div></div>
-              </Card>
-            );})}
+            {[...archives].reverse().map(a=>{
+              const disasters=Array.isArray(a.disasters)?a.disasters:[];
+              const cnts=DTYPES.reduce((acc,t)=>({...acc,[t]:disasters.filter(d=>d.type===t).length}),{});
+              // シートデータがあるか確認
+              const sheetCount=a.tableData?SHEET_DEFS.filter(s=>Array.isArray(a.tableData[s.key])&&a.tableData[s.key].length>0).length:0;
+              return(
+                <Card key={a.id} style={{cursor:"pointer",transition:"transform 0.1s"}}
+                  onClick={()=>{setSel(String(a.id));}}
+                  onMouseOver={e=>(e.currentTarget.style.transform="translateY(-2px)")}
+                  onMouseOut={e=>(e.currentTarget.style.transform="none")}
+                >
+                  <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                    <div style={{fontSize:30,flexShrink:0}}>📁</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:"bold",fontSize:16,color:NAVY,marginBottom:4}}>{a.name}</div>
+                      <div style={{fontSize:13,color:GRAY,marginBottom:8}}>📅 {fmtDT(a.savedAt)}</div>
+                      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:4}}>
+                        {DTYPES.filter(t=>cnts[t]>0).map(t=>(<span key={t} style={{background:TC[t]+"20",color:TC[t],fontSize:13,padding:"2px 8px",borderRadius:20,fontWeight:"bold",border:`1px solid ${TC[t]}33`}}>{t} {cnts[t]}件</span>))}
+                        {disasters.length===0&&<span style={{fontSize:13,color:GRAY}}>案件なし</span>}
+                      </div>
+                      {sheetCount>0&&<div style={{fontSize:12,color:DGREEN,fontWeight:"bold"}}>📊 シートデータ {sheetCount}種類</div>}
+                    </div>
+                    <div style={{color:"#ccc",fontSize:22}}>›</div>
+                  </div>
+                  {/* PC・スマホ共通の「開く」ボタン */}
+                  <div style={{marginTop:10,borderTop:"1px solid #f0f0f0",paddingTop:10}}>
+                    <button
+                      onClick={e=>{e.stopPropagation();setSel(String(a.id));}}
+                      style={{width:"100%",background:NAVY,color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontSize:14,fontWeight:"bold",cursor:"pointer",fontFamily:"inherit"}}
+                    >📂 この記録を開く</button>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1259,6 +1606,10 @@ function App(){
   const[config,setConfig]=useState({adminPw:"nanami2024",inputPw:"input2024",viewerPw:"view2024"});
   const[disasters,setDisasters]=useState([]);
   const[vehicles,setVehicles]=useState(()=>initVehicles());
+  const[vehicleLabels,setVehicleLabels]=useState({}); // 車両カスタム名
+  // 保存中フラグ（サブスクリプション競合防止）
+  const savingDisRef=useRef(false);
+  const savingVehRef=useRef(false);
   const[archives,setArchives]=useState([]);
   const[dutyCount,setDutyCount]=useState(0);
   const[toast,setToast]=useState({msg:null});
@@ -1278,6 +1629,8 @@ function App(){
     if(veh&&typeof veh==="object")setVehicles(veh);
     if(arc&&Array.isArray(arc))setArchives(arc);
     if(dty!=null)setDutyCount(dty);
+    const lbl=await sg("nf-vehicle-labels");
+    if(lbl&&typeof lbl==="object")setVehicleLabels(lbl);
     setLoading(false);
   })();},[]);
 
@@ -1286,12 +1639,14 @@ function App(){
   // グローバルリアルタイム同期
   useEffect(()=>{
     if(loading)return;
-    return subscribeStorage(["nf-config","nf-disasters","nf-vehicles","nf-archives","nf-duty-count"],(key,value)=>{
+    return subscribeStorage(["nf-config","nf-disasters","nf-vehicles","nf-archives","nf-duty-count","nf-vehicle-labels"],(key,value)=>{
       if(key==="nf-config"&&value)setConfig(value);
-      if(key==="nf-disasters")setDisasters(Array.isArray(value)?value:[]);
-      if(key==="nf-vehicles")setVehicles(value&&typeof value==="object"?value:initVehicles());
+      // 保存中はサブスクリプションの上書きをスキップ（競合防止）
+      if(key==="nf-disasters"&&!savingDisRef.current)setDisasters(Array.isArray(value)?value:[]);
+      if(key==="nf-vehicles"&&!savingVehRef.current)setVehicles(value&&typeof value==="object"?value:initVehicles());
       if(key==="nf-archives")setArchives(Array.isArray(value)?value:[]);
       if(key==="nf-duty-count"&&value!=null)setDutyCount(value);
+      if(key==="nf-vehicle-labels"&&value&&typeof value==="object")setVehicleLabels(value);
     });
   },[loading]);
 
@@ -1326,10 +1681,23 @@ function App(){
   };
 
   const saveDisasters=async(d)=>{
-    setDisasters(d);await ss("nf-disasters",d);
+    savingDisRef.current=true;
+    savingVehRef.current=true;
+    setDisasters(d);
+    await ss("nf-disasters",d);
     setVehicles(prev=>{const s=syncVehicles(d,prev);ss("nf-vehicles",s);return s;});
+    setTimeout(()=>{savingDisRef.current=false;savingVehRef.current=false;},2000);
   };
-  const saveVehicles=async(v)=>{setVehicles(v);await ss("nf-vehicles",v);};
+  const saveVehicles=async(v)=>{
+    savingVehRef.current=true;
+    setVehicles(v);
+    await ss("nf-vehicles",v);
+    setTimeout(()=>{savingVehRef.current=false;},2000);
+  };
+  const saveVehicleLabels=async(lb)=>{
+    setVehicleLabels(lb);
+    await ss("nf-vehicle-labels",lb);
+  };
   const saveConfig=async(c)=>{setConfig(c);await ss("nf-config",c);showToast("パスワードを更新しました");};
   const saveDutyCount=async(n)=>{setDutyCount(n);await ss("nf-duty-count",n);};
 
@@ -1394,7 +1762,7 @@ function App(){
       {safePage==="vehicles"&&role!=="viewer"&&<VehicleScreen vehicles={vehicles} onSaveVehicles={saveVehicles} role={role} onBack={back} onForceRefresh={async(veh)=>{if(veh&&typeof veh==="object")setVehicles(veh);}}/>}
       {safePage==="archives"&&role!=="viewer"&&<ArchivesScreen archives={archives} onDelete={deleteArchive} onRestore={handleRestore} onBack={back} role={role}/>}
       {safePage==="links"&&role!=="viewer"&&<LinksScreen role={role} onBack={back}/>}
-      {safePage==="settings"&&role==="admin"&&<SettingsScreen config={config} onSaveConfig={saveConfig} onBack={back} showToast={showToast} vehicles={vehicles} onSaveVehicles={saveVehicles} disasters={disasters} onUpdateDisasters={saveDisasters}/>}
+      {safePage==="settings"&&role==="admin"&&<SettingsScreen config={config} onSaveConfig={saveConfig} onBack={back} showToast={showToast} vehicleLabels={vehicleLabels} onSaveLabels={saveVehicleLabels}/>}
       {sheet&&role!=="viewer"&&<SheetPage {...sheet} role={role} onBack={back}/>}
       {showModal&&<ArchiveModal disasters={disasters} onSave={handleArchiveSave} onClose={()=>setShowModal(false)}/>}
       {resetting&&<ResetProgress onDone={()=>setResetting(false)}/>}

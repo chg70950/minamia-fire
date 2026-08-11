@@ -4,15 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>南アルプス市消防本部 災害対策情報システム</title>
+
+    <!-- テーマカラー -->
+    <meta name="theme-color" content="#1A3A5C" />
+
+    <!-- iOS Safari ホーム画面追加 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="南ア消防" />
+
+    <!-- スタイル -->
     <style>
+      *, *::before, *::after { box-sizing: border-box; }
       html, body, #root {
         min-height: 100%;
         margin: 0;
+        padding: 0;
+      }
+      body {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-text-size-adjust: 100%;
+        overscroll-behavior: none;
       }
     </style>
   </head>
   <body>
     <div id="root"></div>
+
+    <!-- window.storage フォールバック（main.jsx側でSupabase実装が注入される） -->
     <script>
       if (!window.storage) {
         window.storage = {
@@ -29,6 +48,8 @@
         };
       }
     </script>
+
+    <!-- アプリ本体 -->
     <script type="module" src="./src/main.jsx"></script>
   </body>
 </html>
